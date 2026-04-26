@@ -328,9 +328,10 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             ((bestNegMask & (1 << ni)) != 0 ? valid : invalid).add(equipment.get(negIdx[ni]));
         }
 
-        // player.reset() is a no-op here (we never called player.modify()),
-        // but satisfies the contract for benchmark reuse.
         player.reset();
+        for (IEquipment item : valid) {
+            player.modify(item.bonuses(), true);
+        }
         return new Result(valid, invalid);
     }
 
