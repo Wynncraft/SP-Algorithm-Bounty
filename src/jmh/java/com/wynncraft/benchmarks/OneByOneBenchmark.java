@@ -71,6 +71,7 @@ public class OneByOneBenchmark {
     public void one_by_one(Blackhole blackhole) {
         // On this benchmark we include each equipment one by one
         // in the common order (weapon -> armour -> accessory -> tomes)
+        clean(); // kept growing over 64...
         for (int i = 0; i < TARGET_BUILD.size(); i++) {
             // Include the next equipment
             IEquipment equipment = TARGET_BUILD.get(i);
@@ -86,6 +87,7 @@ public class OneByOneBenchmark {
     public void one_by_one_inverse(Blackhole blackhole) {
         // On this benchmark we include each equipment one by one
         // in the inverse order (tomes -> accessories -> armour -> weapon)
+        clean(); // kept growing over 64...
         for (int size = TARGET_BUILD.size(); size > 0; size--) {
             // Include the next equipment
             IEquipment equipment = TARGET_BUILD.get(size - 1);
