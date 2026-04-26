@@ -3,6 +3,7 @@ package com.wynncraft;
 
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskAlgorithm;
+import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
 import com.wynncraft.algorithms.WynnFrumaAlgorithm;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
@@ -23,6 +24,7 @@ public class AlgorithmRegistry {
         register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
         register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
+        register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
     }
 
     /**
