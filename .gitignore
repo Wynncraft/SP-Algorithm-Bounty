@@ -6,6 +6,8 @@ scripts/
 !**/src/main/**/build/
 !**/src/test/**/build/
 .kotlin
+/.codex
+/.continues-handoff.md
 
 ### IntelliJ IDEA ###
 .idea/
