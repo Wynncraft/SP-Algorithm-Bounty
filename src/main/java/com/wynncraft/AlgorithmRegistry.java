@@ -1,7 +1,7 @@
 package com.wynncraft;
 
 
-import com.wynncraft.algorithms.WynnFrumaAlgorithm;
+import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
@@ -18,7 +18,7 @@ public class AlgorithmRegistry {
         // Register here your algorithm here and your custom player if necessary!
         // Make sure your algorithm contains the @Information annotation
         // New additions always goes on the bottom for reference
-        register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
+        register(new NegativeOrderAlgorithm(), WynnPlayer.Builder::new);
     }
 
     /**
