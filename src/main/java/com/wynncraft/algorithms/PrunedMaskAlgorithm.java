@@ -137,13 +137,13 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
 
         // Safety caps — sort by descending net bonus before truncating so the
         // weakest contributors are dropped, not arbitrary tail elements.
-        // Bitmask uses int (32 bits); keep posSize ≤ 30 to avoid sign-bit issues.
-        if (posSize > 30) {
+        // Bitmask uses long (64 bits); keep posSize ≤ 62 to avoid sign-bit issues.
+        if (posSize > 62) {
             sortByNetBonusDesc(posIdx, posSize);
-            int dropped = posSize - 30;
-            for (int pi = 30; pi < posSize; pi++) infeas[posIdx[pi]] = true;
-            posSize = 30;
-            System.err.printf("[PrunedMask] WARNING: %d positive items exceed the 30-item bitmask cap; " +
+            int dropped = posSize - 62;
+            for (int pi = 62; pi < posSize; pi++) infeas[posIdx[pi]] = true;
+            posSize = 62;
+            System.err.printf("[PrunedMask] WARNING: %d positive items exceed the 62-item bitmask cap; " +
                     "%d lowest-bonus items marked infeasible — result may not be globally optimal%n",
                     posSize + dropped, dropped);
         }
@@ -160,7 +160,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
 
         // ── 3. Greedy positive pass ─────────────────────────────────────────────────
         // Positive items can only add to SP totals, so greedy convergence is optimal.
-        int posActive = 0;
+        long posActive = 0L;
         System.arraycopy(base, 0, cur, 0, SP_COUNT);
         int posWeight = 0;
         {
@@ -169,9 +169,9 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
                 changed = false;
                 //noinspection DuplicatedCode
                 for (int pi = 0; pi < posSize; pi++) {
-                    if ((posActive & (1 << pi)) != 0) continue;
+                    if ((posActive & (1L << pi)) != 0) continue;
                     if (meets(cur, reqs[posIdx[pi]])) {
-                        posActive |= (1 << pi);
+                        posActive |= (1L << pi);
                         addSP(cur, bonus[posIdx[pi]]);
                         posWeight += sumSP(bonus[posIdx[pi]]);
                         changed = true;
@@ -184,10 +184,10 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
         // Masks are pre-sorted descending by bit-count, enabling early break.
         IntArrayList masks = MASK_CACHE.get(negSize);
 
-        int bestCount   = Integer.bitCount(posActive);
-        int bestWeight  = posWeight;
-        int bestPosMask = posActive;
-        int bestNegMask = 0;
+        int  bestCount   = Long.bitCount(posActive);
+        int  bestWeight  = posWeight;
+        long bestPosMask = posActive;
+        int  bestNegMask = 0;
 
         for (int mi = 0; mi < masks.size(); mi++) {
             int mask = masks.getInt(mi);
@@ -235,9 +235,9 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             // simSP currently holds combined (cur + all neg bonuses); we recycle it
             // by copying base into it, saving one allocation.
             System.arraycopy(base, 0, simSP, 0, SP_COUNT);
-            int simPosActive = 0; // no positives pre-activated
-            int negActive    = 0;
-            int finalWeight  = 0;
+            long simPosActive = 0L; // no positives pre-activated
+            int  negActive    = 0;
+            int  finalWeight  = 0;
 
             boolean changed = true;
             while (changed) {
@@ -256,7 +256,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
                     // Reject if it invalidates any currently-active positive item
                     boolean invalidates = false;
                     for (int pi = 0; pi < posSize; pi++) {
-                        if ((simPosActive & (1 << pi)) != 0 && !meets(simSP, reqs[posIdx[pi]])) {
+                        if ((simPosActive & (1L << pi)) != 0 && !meets(simSP, reqs[posIdx[pi]])) {
                             invalidates = true;
                             break;
                         }
@@ -275,9 +275,9 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
                 // Try unlocking additional positive items with the updated SP state
                 //noinspection DuplicatedCode
                 for (int pi = 0; pi < posSize; pi++) {
-                    if ((simPosActive & (1 << pi)) != 0) continue;
+                    if ((simPosActive & (1L << pi)) != 0) continue;
                     if (meets(simSP, reqs[posIdx[pi]])) {
-                        simPosActive |= (1 << pi);
+                        simPosActive |= (1L << pi);
                         addSP(simSP, bonus[posIdx[pi]]);
                         finalWeight  += sumSP(bonus[posIdx[pi]]);
                         changed = true;
@@ -297,14 +297,14 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             boolean valid = true;
             //noinspection DuplicatedCode
             for (int pi = 0; pi < posSize; pi++) {
-                if ((simPosActive & (1 << pi)) != 0 && !meets(simSP, reqs[posIdx[pi]])) {
+                if ((simPosActive & (1L << pi)) != 0 && !meets(simSP, reqs[posIdx[pi]])) {
                     valid = false;
                     break;
                 }
             }
             if (!valid) continue;
 
-            int totalCount = Integer.bitCount(simPosActive) + negCount;
+            int totalCount = Long.bitCount(simPosActive) + negCount;
             if (totalCount < bestCount) continue;
             if (totalCount == bestCount && finalWeight <= bestWeight) continue;
 
@@ -322,7 +322,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             if (infeas[i]) invalid.add(equipment.get(i));
         }
         for (int pi = 0; pi < posSize; pi++) {
-            ((bestPosMask & (1 << pi)) != 0 ? valid : invalid).add(equipment.get(posIdx[pi]));
+            ((bestPosMask & (1L << pi)) != 0 ? valid : invalid).add(equipment.get(posIdx[pi]));
         }
         for (int ni = 0; ni < negSize; ni++) {
             ((bestNegMask & (1 << ni)) != 0 ? valid : invalid).add(equipment.get(negIdx[ni]));
