@@ -83,8 +83,10 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
     private final int[][] bonus  = new int[MAX_ITEMS][SP_COUNT];
     private final boolean[] hasNeg = new boolean[MAX_ITEMS];
     private final boolean[] infeas = new boolean[MAX_ITEMS];
-    private final int[] posIdx   = new int[MAX_ITEMS];
-    private final int[] negIdx   = new int[MAX_ITEMS];
+    private final int[]     posIdx  = new int[MAX_ITEMS];
+    private final int[]     negIdx  = new int[MAX_ITEMS];
+    private final int[]     freeIdx = new int[MAX_ITEMS];
+    private final boolean[] isFree  = new boolean[MAX_ITEMS];
     private final int[] totMax   = new int[SP_COUNT];
     private final int[] base     = new int[SP_COUNT];
     private final int[] cur      = new int[SP_COUNT];
@@ -107,19 +109,41 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             System.arraycopy(item.bonuses(),       0, bonus[i], 0, SP_COUNT);
             hasNeg[i] = item.hasNegativeBonus();
             infeas[i] = false;
+            isFree[i] = false;
         }
 
-        // ── 2. Pre-filter permanently infeasible items ──────────────────────────────
-        // For each item at index i: maxPossible[k] = base[k] + sum of max(0, bonus[j][k]) for j ≠ i.
-        // If maxPossible[k] < reqs[i][k] for any k, the item can never be valid.
+        // ── 2a. Pre-activate free items (no requirements, no negative bonus) ─────────
+        // These are unconditionally optimal: always equippable, never reduce any SP
+        // dimension, never invalidate other items. Adding their bonuses to base gives
+        // all subsequent phases an accurate SP floor and raises the pruning baseline.
+        int freeSize = 0;
         for (int i = 0; i < n; i++) {
-            for (int k = 0; k < SP_COUNT; k++) {
-                if (bonus[i][k] > 0) totMax[k] += bonus[i][k];
-            }
+            if (hasNeg[i]) continue;
+            boolean noReq = reqs[i][0] <= 0 && reqs[i][1] <= 0 && reqs[i][2] <= 0
+                         && reqs[i][3] <= 0 && reqs[i][4] <= 0;
+            if (!noReq) continue;
+            base[0] += bonus[i][0]; base[1] += bonus[i][1]; base[2] += bonus[i][2];
+            base[3] += bonus[i][3]; base[4] += bonus[i][4];
+            isFree[i] = true;
+            freeIdx[freeSize++] = i;
+        }
+
+        // ── 2b. Pre-filter permanently infeasible items ───────────────────────────────
+        // totMax = sum of positive bonus components from non-free items only (free
+        // bonuses are already in base). Used to bound the maximum achievable SP.
+        for (int k = 0; k < SP_COUNT; k++) totMax[k] = 0;
+        for (int i = 0; i < n; i++) {
+            if (isFree[i]) continue;
+            if (bonus[i][0] > 0) totMax[0] += bonus[i][0];
+            if (bonus[i][1] > 0) totMax[1] += bonus[i][1];
+            if (bonus[i][2] > 0) totMax[2] += bonus[i][2];
+            if (bonus[i][3] > 0) totMax[3] += bonus[i][3];
+            if (bonus[i][4] > 0) totMax[4] += bonus[i][4];
         }
 
         int posSize = 0, negSize = 0;
         for (int i = 0; i < n; i++) {
+            if (isFree[i]) continue; // always valid, skip feasibility check
             boolean possible = true;
             for (int k = 0; k < SP_COUNT; k++) {
                 if (reqs[i][k] <= 0) continue;
@@ -184,7 +208,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
         // Masks are pre-sorted descending by bit-count, enabling early break.
         IntArrayList masks = MASK_CACHE.get(negSize);
 
-        int  bestCount   = Long.bitCount(posActive);
+        int  bestCount   = freeSize + Long.bitCount(posActive);
         int  bestWeight  = posWeight;
         long bestPosMask = posActive;
         int  bestNegMask = 0;
@@ -194,7 +218,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             if (mask == 0) continue; // positive-only baseline already initialized above
 
             int negCount = Integer.bitCount(mask);
-            int maxTotal = negCount + posSize; // optimistic: all pos + all neg in mask
+            int maxTotal = freeSize + negCount + posSize; // free items always count
 
             // All remaining masks have ≤ this many items; can't beat bestCount.
             if (maxTotal < bestCount) break;
@@ -304,7 +328,7 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
             }
             if (!valid) continue;
 
-            int totalCount = Long.bitCount(simPosActive) + negCount;
+            int totalCount = freeSize + Long.bitCount(simPosActive) + negCount;
             if (totalCount < bestCount) continue;
             if (totalCount == bestCount && finalWeight <= bestWeight) continue;
 
@@ -320,6 +344,9 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
 
         for (int i = 0; i < n; i++) {
             if (infeas[i]) invalid.add(equipment.get(i));
+        }
+        for (int fi = 0; fi < freeSize; fi++) {
+            valid.add(equipment.get(freeIdx[fi])); // always valid
         }
         for (int pi = 0; pi < posSize; pi++) {
             ((bestPosMask & (1L << pi)) != 0 ? valid : invalid).add(equipment.get(posIdx[pi]));
@@ -343,27 +370,28 @@ public class PrunedMaskAlgorithm implements IAlgorithm<WynnPlayer> {
      * regardless of the current SP value (which may be negative due to item bonuses).
      */
     private static boolean meets(int[] sp, int[] req) {
-        for (int k = 0; k < SP_COUNT; k++) {
-            if (req[k] > 0 && sp[k] < req[k]) return false;
-        }
-        return true;
+        return (req[0] <= 0 || sp[0] >= req[0])
+            && (req[1] <= 0 || sp[1] >= req[1])
+            && (req[2] <= 0 || sp[2] >= req[2])
+            && (req[3] <= 0 || sp[3] >= req[3])
+            && (req[4] <= 0 || sp[4] >= req[4]);
     }
 
     /** sp[k] += delta[k] for all k. */
     private static void addSP(int[] sp, int[] delta) {
-        for (int k = 0; k < SP_COUNT; k++) sp[k] += delta[k];
+        sp[0] += delta[0]; sp[1] += delta[1]; sp[2] += delta[2];
+        sp[3] += delta[3]; sp[4] += delta[4];
     }
 
     /** sp[k] -= delta[k] for all k. */
     private static void subSP(int[] sp, int[] delta) {
-        for (int k = 0; k < SP_COUNT; k++) sp[k] -= delta[k];
+        sp[0] -= delta[0]; sp[1] -= delta[1]; sp[2] -= delta[2];
+        sp[3] -= delta[3]; sp[4] -= delta[4];
     }
 
     /** Returns the sum of all values in sp. */
     private static int sumSP(int[] sp) {
-        int total = 0;
-        for (int k = 0; k < SP_COUNT; k++) total += sp[k];
-        return total;
+        return sp[0] + sp[1] + sp[2] + sp[3] + sp[4];
     }
 
     /** Returns the net bonus (sum of all bonus dimensions) for item at index {@code itemIdx}. */
