@@ -1,6 +1,7 @@
 package com.wynncraft;
 
 
+import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
@@ -23,6 +24,7 @@ public class AlgorithmRegistry {
         // New additions always goes on the bottom for reference
         register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
         register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
+        register(new NegativeOrderAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
     }
