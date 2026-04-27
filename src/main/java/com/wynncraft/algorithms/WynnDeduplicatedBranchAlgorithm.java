@@ -1,349 +1,279 @@
 package com.wynncraft.algorithms;
 
-import com.wynncraft.core.NegativeMaskCache;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IEquipment;
 import com.wynncraft.core.interfaces.Information;
 import com.wynncraft.enums.SkillPoint;
-import speiger.src.collections.ints.lists.IntArrayList;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.List;
 
+
+/**
+ * DFS over deduplicated item groups. Identical items (same object reference)
+ * are collapsed into a single group whose scaledBonus = N × bonus_per_copy and
+ * count = N. This reduces the DFS branching factor from ~22 items to ~9-10
+ * groups for typical Wynncraft builds.
+ *
+ * Free groups (no req, no negative bonus) are pre-activated, identical to
+ * CapyTopoAlgorithm's phase-1. The DFS then backtracks over remaining groups
+ * with cascade-isValid checks, upper-bound pruning, and a visited bitset.
+ */
 @Information(name = "Wynn Dedupe Branch", version = 1, authors = "azael")
 public class WynnDeduplicatedBranchAlgorithm implements IAlgorithm<WynnPlayer> {
 
     private static final SkillPoint[] SKILL_POINTS = SkillPoint.values();
-    private static final NegativeMaskCache MASK_CACHE = new NegativeMaskCache();
-    private static final WynnFrumaAlgorithm FALLBACK = new WynnFrumaAlgorithm();
+    private static final int N_SKILLS = SKILL_POINTS.length; // 5
 
-    private static final class Group {
-        final IEquipment template;
-        final List<IEquipment> items = new ArrayList<>();
-        final int[] scaledBonus;
-        int scaledWeight;
+    private static final int N_VISITED_BITS = 22;
+    private static final int VISITED_WORDS  = (1 << N_VISITED_BITS) / 64;
 
-        Group(IEquipment item) {
-            this.template = item;
-            this.scaledBonus = item.bonuses().clone();
-            this.scaledWeight = weight(item.bonuses());
-            this.items.add(item);
-        }
+    // ── per-run state ────────────────────────────────────────────────────────
 
-        void add(IEquipment item) {
-            items.add(item);
+    private final int[] state = new int[N_SKILLS];
 
-            int[] bonus = item.bonuses();
-            for (int i = 0; i < bonus.length; i++) {
-                scaledBonus[i] += bonus[i];
-            }
-            scaledWeight += weight(bonus);
-        }
+    // per-group buffers; resized lazily
+    private int cap = 0;
+    private IEquipment[] groupTemplate = new IEquipment[0];
+    private int[][]      groupReqs     = new int[0][];
+    private int[][]      groupThresh   = new int[0][];  // req[s] + bonus_per_copy[s]
+    private int[][]      groupScaled   = new int[0][];  // sum of all copies' bonuses
+    private int[]        groupWeights  = new int[0];
+    private int[]        groupCounts   = new int[0];
+    private boolean[]    hasReq        = new boolean[0];
+    private boolean[]    hasNegBonus   = new boolean[0];
+    private int[]        groupsWithReq = new int[0];
+    private int          groupsWithReqCount;
 
-        int count() {
-            return items.size();
-        }
-    }
+    // per-item group-id lookup (equipment index → group index)
+    private int[] equipGroupId = new int[0];
+
+    private int n;  // number of unique groups
+
+    private final long[] visited    = new long[VISITED_WORDS];
+    private boolean      useVisited;
+
+    private int  bestCount;
+    private int  bestWeight;
+    private long bestMask;
+
+    // ────────────────────────────────────────────────────────────────────────
 
     @Override
     public Result run(WynnPlayer player) {
-        List<IEquipment> positives = new ArrayList<>();
-        List<IEquipment> negatives = new ArrayList<>();
         List<IEquipment> equipment = player.equipment();
-        for (int i = 0; i < equipment.size(); i++) {
-            IEquipment item = equipment.get(i);
-            if (item.hasNegativeBonus()) {
-                negatives.add(item);
-                continue;
+        int eqSize = equipment.size();
+
+        // Grow instance buffers if needed
+        if (eqSize > cap) {
+            int newCap = Math.max(eqSize, 32);
+            groupTemplate = new IEquipment[newCap];
+            groupReqs     = new int[newCap][];
+            groupWeights  = new int[newCap];
+            groupCounts   = new int[newCap];
+            hasReq        = new boolean[newCap];
+            hasNegBonus   = new boolean[newCap];
+            groupsWithReq = new int[newCap];
+            equipGroupId  = new int[newCap];
+            // pre-alloc inner arrays that are reused in-place
+            int[][] newThresh  = new int[newCap][];
+            int[][] newScaled  = new int[newCap][];
+            for (int i = 0; i < newCap; i++) {
+                newThresh[i] = new int[N_SKILLS];
+                newScaled[i] = new int[N_SKILLS];
             }
-            positives.add(item);
+            groupThresh = newThresh;
+            groupScaled = newScaled;
+            cap = newCap;
         }
 
-        if (negatives.isEmpty()) {
-            return runPositiveOnly(player, positives);
+        // ── Deduplicate: O(N²) reference-equality grouping (N ≤ 22) ─────────
+        n = 0;
+        groupsWithReqCount = 0;
+        for (int k = 0; k < eqSize; k++) {
+            IEquipment item = equipment.get(k);
+
+            // Find existing group by reference
+            int gid = -1;
+            for (int g = 0; g < n; g++) {
+                if (groupTemplate[g] == item) { gid = g; break; }
+            }
+
+            if (gid == -1) {
+                gid = n++;
+                int[] req = item.requirements();
+                int[] bon = item.bonuses();
+
+                groupTemplate[gid] = item;
+                groupReqs[gid]     = req;
+                groupCounts[gid]   = 1;
+                groupWeights[gid]  = weight(bon);
+
+                int[] sc  = groupScaled[gid];
+                sc[0] = bon[0]; sc[1] = bon[1]; sc[2] = bon[2]; sc[3] = bon[3]; sc[4] = bon[4];
+
+                boolean hr = req[0]>0||req[1]>0||req[2]>0||req[3]>0||req[4]>0;
+                boolean hn = bon[0]<0||bon[1]<0||bon[2]<0||bon[3]<0||bon[4]<0;
+                hasReq[gid]      = hr;
+                hasNegBonus[gid] = hn;
+
+                int[] thr = groupThresh[gid];
+                thr[0] = hr && req[0]>0 ? req[0]+bon[0] : Integer.MIN_VALUE;
+                thr[1] = hr && req[1]>0 ? req[1]+bon[1] : Integer.MIN_VALUE;
+                thr[2] = hr && req[2]>0 ? req[2]+bon[2] : Integer.MIN_VALUE;
+                thr[3] = hr && req[3]>0 ? req[3]+bon[3] : Integer.MIN_VALUE;
+                thr[4] = hr && req[4]>0 ? req[4]+bon[4] : Integer.MIN_VALUE;
+
+                if (hr) groupsWithReq[groupsWithReqCount++] = gid;
+            } else {
+                // Merge: accumulate scaled bonus
+                int[] bon = item.bonuses();
+                int[] sc  = groupScaled[gid];
+                sc[0] += bon[0]; sc[1] += bon[1]; sc[2] += bon[2]; sc[3] += bon[3]; sc[4] += bon[4];
+                groupWeights[gid] += weight(bon);
+                groupCounts[gid]++;
+            }
+
+            equipGroupId[k] = gid;
         }
 
-        if (negatives.size() >= 18) {
-            return FALLBACK.run(player);
-        }
+        // ── Set state from player's allocated SP ─────────────────────────────
+        for (int s = 0; s < N_SKILLS; s++) state[s] = player.allocated(SKILL_POINTS[s]);
 
-        List<Group> positiveGroups = deduplicate(positives);
-        int[] allocated = allocated(player);
-        int positiveItemCount = countItems(positiveGroups);
-        int negativeCount = negatives.size();
-        int[] baseTotals = allocated.clone();
-        boolean[] basePositiveActive = new boolean[positiveGroups.size()];
-        int baseCount = 0;
-        int baseWeight = 0;
-
-        boolean changed = true;
-        while (changed) {
-            changed = false;
-            for (int i = 0; i < positiveGroups.size(); i++) {
-                if (basePositiveActive[i]) {
-                    continue;
-                }
-
-                Group group = positiveGroups.get(i);
-                if (!canEquip(group.template.requirements(), baseTotals)) {
-                    continue;
-                }
-
-                basePositiveActive[i] = true;
-                baseCount += group.count();
-                baseWeight += group.scaledWeight;
-                modify(baseTotals, group.scaledBonus, true);
-                changed = true;
-            }
-        }
-
-        int bestCount = -1;
-        int bestWeight = Integer.MIN_VALUE;
-        int bestMask = 0;
-        boolean[] bestPositiveActive = new boolean[positiveGroups.size()];
-        boolean[] bestNegativeActive = new boolean[0];
-
-        IntArrayList masks = MASK_CACHE.get(negativeCount);
-        for (int mask : masks) {
-            int selectedNegativeCount = Integer.bitCount(mask);
-            int maxPossibleCount = positiveItemCount + selectedNegativeCount;
-            if (bestCount > maxPossibleCount) {
-                break;
-            }
-
-            int[] totals = baseTotals.clone();
-            boolean[] positiveActive = Arrays.copyOf(basePositiveActive, basePositiveActive.length);
-            boolean[] negativeActive = new boolean[negativeCount];
-            int count = baseCount;
-            int weight = baseWeight;
-
-            changed = true;
-            while (changed) {
-                changed = false;
-
-                for (int i = 0; i < negativeCount; i++) {
-                    if ((mask & (1 << i)) == 0 || negativeActive[i]) {
-                        continue;
-                    }
-
-                    IEquipment item = negatives.get(i);
-                    if (!canEquip(item.requirements(), totals)) {
-                        continue;
-                    }
-
-                    negativeActive[i] = true;
-                    count++;
-                    weight += weight(item.bonuses());
-                    modify(totals, item.bonuses(), true);
-                    changed = true;
-                }
-
-                for (int i = 0; i < positiveGroups.size(); i++) {
-                    if (positiveActive[i]) {
-                        continue;
-                    }
-
-                    Group group = positiveGroups.get(i);
-                    if (!canEquip(group.template.requirements(), totals)) {
-                        continue;
-                    }
-
-                    positiveActive[i] = true;
-                    count += group.count();
-                    weight += group.scaledWeight;
-                    modify(totals, group.scaledBonus, true);
-                    changed = true;
-                }
-            }
-
-            if (!allSelectedNegativesActive(mask, negativeActive)) {
-                continue;
-            }
-
-            if (count > bestCount || (count == bestCount && weight > bestWeight)) {
-                bestCount = count;
-                bestWeight = weight;
-                bestMask = mask;
-                bestPositiveActive = Arrays.copyOf(positiveActive, positiveActive.length);
-                bestNegativeActive = Arrays.copyOf(negativeActive, negativeActive.length);
+        // ── Phase 1: pre-activate free groups ───────────────────────────────
+        long activeMask   = 0L;
+        int  activeCount  = 0;
+        int  activeWeight = 0;
+        for (int i = 0; i < n; i++) {
+            if (!hasReq[i] && !hasNegBonus[i]) {
+                applyBonus(i, +1);
+                activeMask    |= 1L << i;
+                activeCount   += groupCounts[i];
+                activeWeight  += groupWeights[i];
             }
         }
 
-        return buildResult(player, positiveGroups, negatives, bestMask, bestPositiveActive, bestNegativeActive);
-    }
+        bestCount  = activeCount;
+        bestWeight = activeWeight;
+        bestMask   = activeMask;
 
-    private Result runPositiveOnly(WynnPlayer player, List<IEquipment> positives) {
-        int[] totals = allocated(player);
-        int[] finalBonus = new int[SKILL_POINTS.length];
-        boolean[] active = new boolean[positives.size()];
-        List<IEquipment> valid = new ArrayList<>();
+        long allMask       = (n == 64) ? -1L : (1L << n) - 1L;
+        long remainingMask = allMask & ~activeMask;
+
+        // Pre-sum count of items in remaining (non-free) groups for pruning
+        int remainingCount = 0;
+        {
+            long iter = remainingMask;
+            while (iter != 0) {
+                long bit = iter & -iter; iter ^= bit;
+                remainingCount += groupCounts[Long.numberOfTrailingZeros(bit)];
+            }
+        }
+
+        // ── Visited-set setup ────────────────────────────────────────────────
+        useVisited = n <= N_VISITED_BITS;
+        if (useVisited) {
+            int wordsToClear = (1 << n) / 64 + 1;
+            if (wordsToClear > VISITED_WORDS) wordsToClear = VISITED_WORDS;
+            Arrays.fill(visited, 0, wordsToClear, 0L);
+        }
+
+        // ── Phase 2: backtracking DFS ────────────────────────────────────────
+        bt(activeMask, remainingMask, activeCount, activeWeight, remainingCount);
+
+        // ── Reconstruct result ───────────────────────────────────────────────
+        List<IEquipment> valid   = new ArrayList<>();
         List<IEquipment> invalid = new ArrayList<>();
-
-        for (int i = 0; i < positives.size(); i++) {
-            IEquipment item = positives.get(i);
-            if (!isTrivial(item)) {
-                continue;
-            }
-
-            active[i] = true;
-            valid.add(item);
-        }
-
-        boolean changed = true;
-        while (changed) {
-            changed = false;
-            for (int i = 0; i < positives.size(); i++) {
-                if (active[i]) {
-                    continue;
-                }
-
-                IEquipment item = positives.get(i);
-                if (!canEquip(item.requirements(), totals)) {
-                    continue;
-                }
-
-                active[i] = true;
-                valid.add(item);
-                modify(totals, item.bonuses(), true);
-                modify(finalBonus, item.bonuses(), true);
-                changed = true;
-            }
-        }
-
-        for (int i = 0; i < positives.size(); i++) {
-            if (active[i]) {
-                continue;
-            }
-
-            invalid.add(positives.get(i));
+        for (int k = 0; k < eqSize; k++) {
+            int gid = equipGroupId[k];
+            if ((bestMask & (1L << gid)) != 0) valid.add(equipment.get(k));
+            else                                 invalid.add(equipment.get(k));
         }
 
         player.reset();
-        player.modify(finalBonus, true);
-        return new Result(valid, invalid);
-    }
-
-    private Result buildResult(
-        WynnPlayer player,
-        List<Group> positiveGroups,
-        List<IEquipment> negatives,
-        int bestMask,
-        boolean[] bestPositiveActive,
-        boolean[] bestNegativeActive
-    ) {
-        player.reset();
-
-        List<IEquipment> valid = new ArrayList<>();
-        List<IEquipment> invalid = new ArrayList<>();
-
-        for (int i = 0; i < positiveGroups.size(); i++) {
-            Group group = positiveGroups.get(i);
-            if (!bestPositiveActive[i]) {
-                invalid.addAll(group.items);
-                continue;
-            }
-
-            valid.addAll(group.items);
-            player.modify(group.scaledBonus, true);
-        }
-
-        for (int i = 0; i < negatives.size(); i++) {
-            if ((bestMask & (1 << i)) == 0 || !bestNegativeActive[i]) {
-                invalid.add(negatives.get(i));
-                continue;
-            }
-
-            valid.add(negatives.get(i));
-            player.modify(negatives.get(i).bonuses(), true);
+        for (int i = 0; i < n; i++) {
+            if ((bestMask & (1L << i)) != 0) player.modify(groupScaled[i], true);
         }
 
         return new Result(valid, invalid);
     }
 
-    private List<Group> deduplicate(List<IEquipment> positives) {
-        IdentityHashMap<IEquipment, Group> groups = new IdentityHashMap<>();
-        List<Group> ordered = new ArrayList<>();
-        for (int i = 0; i < positives.size(); i++) {
-            IEquipment item = positives.get(i);
-            Group group = groups.get(item);
-            if (group == null) {
-                group = new Group(item);
-                groups.put(item, group);
-                ordered.add(group);
-                continue;
+    private void bt(long activeMask, long remainingMask, int count, int weight, int remainingCount) {
+        if (count > bestCount || (count == bestCount && weight > bestWeight)) {
+            bestCount  = count;
+            bestWeight = weight;
+            bestMask   = activeMask;
+        }
+
+        if (count + remainingCount <= bestCount) return;
+
+        long iter = remainingMask;
+        while (iter != 0) {
+            long bit  = iter & -iter;
+            iter ^= bit;
+            int i = Long.numberOfTrailingZeros(bit);
+
+            if (!canEquip(i)) continue;
+
+            long newMask = activeMask | bit;
+            if (useVisited) {
+                int  idx       = (int) newMask;
+                int  word      = idx >>> 6;
+                long bitInWord = 1L << (idx & 63);
+                if ((visited[word] & bitInWord) != 0L) continue;
+                visited[word] |= bitInWord;
             }
 
-            group.add(item);
+            applyBonus(i, +1);
+
+            boolean cascadeOk = !hasNegBonus[i] || cascadeValid(activeMask);
+
+            if (cascadeOk) {
+                bt(newMask, remainingMask & ~bit,
+                   count + groupCounts[i], weight + groupWeights[i],
+                   remainingCount - groupCounts[i]);
+            }
+
+            applyBonus(i, -1);
         }
-        return ordered;
     }
 
-    private int[] allocated(WynnPlayer player) {
-        int[] result = new int[SKILL_POINTS.length];
-        for (int i = 0; i < SKILL_POINTS.length; i++) {
-            result[i] = player.allocated(SKILL_POINTS[i]);
-        }
-        return result;
-    }
-
-    private boolean isTrivial(IEquipment item) {
-        int[] requirements = item.requirements();
-        for (int i = 0; i < requirements.length; i++) {
-            if (requirements[i] > 0) {
-                return false;
-            }
-        }
-
-        int[] bonuses = item.bonuses();
-        for (int i = 0; i < bonuses.length; i++) {
-            if (bonuses[i] != 0) {
-                return false;
-            }
+    private boolean cascadeValid(long activeMask) {
+        for (int k = 0; k < groupsWithReqCount; k++) {
+            int j = groupsWithReq[k];
+            if ((activeMask & (1L << j)) == 0) continue;
+            int[] thr = groupThresh[j];
+            if (state[0] < thr[0]) return false;
+            if (state[1] < thr[1]) return false;
+            if (state[2] < thr[2]) return false;
+            if (state[3] < thr[3]) return false;
+            if (state[4] < thr[4]) return false;
         }
         return true;
     }
 
-    private boolean canEquip(int[] requirements, int[] totals) {
-        for (int i = 0; i < requirements.length; i++) {
-            int requirement = requirements[i];
-            if (requirement > 0 && requirement > totals[i]) {
-                return false;
-            }
-        }
+    private boolean canEquip(int i) {
+        int[] r = groupReqs[i];
+        if (r[0] > 0 && state[0] < r[0]) return false;
+        if (r[1] > 0 && state[1] < r[1]) return false;
+        if (r[2] > 0 && state[2] < r[2]) return false;
+        if (r[3] > 0 && state[3] < r[3]) return false;
+        if (r[4] > 0 && state[4] < r[4]) return false;
         return true;
     }
 
-    private boolean allSelectedNegativesActive(int mask, boolean[] active) {
-        for (int i = 0; i < active.length; i++) {
-            if ((mask & (1 << i)) != 0 && !active[i]) {
-                return false;
-            }
-        }
-        return true;
+    private void applyBonus(int i, int sign) {
+        int[] b = groupScaled[i];
+        state[0] += sign * b[0];
+        state[1] += sign * b[1];
+        state[2] += sign * b[2];
+        state[3] += sign * b[3];
+        state[4] += sign * b[4];
     }
 
-    private int countItems(List<Group> groups) {
-        int sum = 0;
-        for (int i = 0; i < groups.size(); i++) {
-            sum += groups.get(i).count();
-        }
-        return sum;
-    }
-
-    private void modify(int[] target, int[] delta, boolean sum) {
-        for (int i = 0; i < delta.length; i++) {
-            target[i] += sum ? delta[i] : -delta[i];
-        }
-    }
-
-    private static int weight(int[] bonus) {
-        int total = 0;
-        for (int i = 0; i < bonus.length; i++) {
-            total += bonus[i];
-        }
-        return total;
+    private static int weight(int[] b) {
+        return b[0] + b[1] + b[2] + b[3] + b[4];
     }
 }
