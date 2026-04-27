@@ -64,66 +64,73 @@ tasks.register('jmh', JavaExec) {
             return
         }
 
-        def byAlgorithm = [:].withDefault { [] }
+        def byBenchmarkClass = [:].withDefault { [:].withDefault { [] } }
         results.each { result ->
             def algorithm = result.params?.algorithm ?: 'unknown'
-            def benchmarkName = result.benchmark?.tokenize('.')?.last() ?: 'unknown'
+            def benchmark = result.benchmark ?: 'unknown'
+            def parts = benchmark.tokenize('.')
+            def methodName = parts ? parts.last() : 'unknown'
+            def benchmarkClass = parts.size() >= 2 ? parts[-2] : 'unknown'
+            def caseName = result.params?.caseName ?: benchmarkCaseName(methodName, result.params ?: [:])
             def score = result.primaryMetric.score as double
             def error = result.primaryMetric.scoreError
             def unit = result.primaryMetric.scoreUnit ?: 'us/op'
-            byAlgorithm[algorithm] << [benchmarkName: benchmarkName, score: score, error: error, unit: unit]
+            byBenchmarkClass[benchmarkClass][algorithm] << [caseName: caseName, score: score, error: error, unit: unit]
         }
 
-        def unit = results[0].primaryMetric.scoreUnit ?: 'us/op'
-        def summaryRows = []
+        byBenchmarkClass.each { benchmarkClass, byAlgorithm ->
+            def classRows = byAlgorithm.values().flatten()
+            def unit = classRows[0]?.unit ?: 'us/op'
+            def summaryRows = []
 
-        println "\n${'=' * 72}"
-        println "  ALGORITHM SUMMARY REPORT"
-        println "${'=' * 72}"
+            println "\n${'=' * 72}"
+            println "  ${benchmarkClass} SUMMARY REPORT"
+            println "${'=' * 72}"
 
-        byAlgorithm.each { algorithm, benchmarks ->
-            def scores = benchmarks.collect { it.score }.sort()
-            def mean = scores.sum() / scores.size()
-            def median = median(scores)
-            def best = benchmarks.min { it.score }
-            def worst = benchmarks.max { it.score }
+            byAlgorithm.each { algorithm, cases ->
+                def scores = cases.collect { it.score }.sort()
+                def mean = scores.sum() / scores.size()
+                def median = median(scores)
+                def best = cases.min { it.score }
+                def worst = cases.max { it.score }
 
-            summaryRows << [
-                algorithm: algorithm,
-                mean: mean,
-                median: median,
-                best: best.score,
-                bestBenchmark: best.benchmarkName,
-                worst: worst.score,
-                worstBenchmark: worst.benchmarkName,
-                count: benchmarks.size()
-            ]
+                summaryRows << [
+                    algorithm: algorithm,
+                    mean: mean,
+                    median: median,
+                    best: best.score,
+                    bestCase: best.caseName,
+                    worst: worst.score,
+                    worstCase: worst.caseName,
+                    count: cases.size()
+                ]
 
-            println "\n  -- ${algorithm} (${benchmarks.size()} benchmarks) --"
-            printf  "  Mean:   %8.3f %s%n", mean, unit
-            printf  "  Median: %8.3f %s%n", median, unit
-            printf  "  Best:   %8.3f %s  <- %s%n", best.score, unit, best.benchmarkName
-            printf  "  Worst:  %8.3f %s  <- %s%n", worst.score, unit, worst.benchmarkName
+                println "\n  -- ${algorithm} (${cases.size()} cases) --"
+                printf  "  Mean:   %8.3f %s%n", mean, unit
+                printf  "  Median: %8.3f %s%n", median, unit
+                printf  "  Best:   %8.3f %s  <- %s%n", best.score, unit, best.caseName
+                printf  "  Worst:  %8.3f %s  <- %s%n", worst.score, unit, worst.caseName
+            }
+
+            summaryRows.sort { it.mean }
+            def fastest = summaryRows[0].mean
+
+            println "\n${'-' * 72}"
+            printf  "  %-30s %10s %10s %10s %10s%n", 'Algorithm', "Mean(${unit})", 'Median', 'Worst', 'vs 1st'
+            println "  ${'-' * 70}"
+
+            summaryRows.each { row ->
+                def ratio = row.mean / fastest
+                printf "  %-30s %10.3f %10.3f %10.3f %9.1fx%n",
+                    row.algorithm,
+                    row.mean,
+                    row.median,
+                    row.worst,
+                    ratio
+            }
+
+            println "${'=' * 72}"
         }
-
-        summaryRows.sort { it.mean }
-        def fastest = summaryRows[0].mean
-
-        println "\n${'-' * 72}"
-        printf  "  %-30s %10s %10s %10s %10s%n", 'Algorithm', "Mean(${unit})", 'Median', 'Worst', 'vs 1st'
-        println "  ${'-' * 70}"
-
-        summaryRows.each { row ->
-            def ratio = row.mean / fastest
-            printf "  %-30s %10.3f %10.3f %10.3f %9.1fx%n",
-                row.algorithm,
-                row.mean,
-                row.median,
-                row.worst,
-                ratio
-        }
-
-        println "${'=' * 72}"
     }
 }
 
@@ -134,4 +141,14 @@ static double median(List<Double> sortedScores) {
     }
 
     return sortedScores[middle]
+}
+
+static String benchmarkCaseName(String methodName, Map params) {
+    def datasetParams = params.findAll { key, ignored -> key != 'algorithm' }
+    if (datasetParams.isEmpty()) {
+        return methodName
+    }
+
+    def suffix = datasetParams.collect { key, value -> "${key}=${value}" }.join(', ')
+    return "${methodName}(${suffix})"
 }

@@ -1,33 +1,16 @@
 package com.wynncraft;
 
-import com.wynncraft.combination.BeforeCombination;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IEquipment;
+import com.wynncraft.core.interfaces.IPlayer;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
 import com.wynncraft.combination.CombinationTest;
 import com.wynncraft.enums.Equipment;
 import com.wynncraft.enums.SkillPoint;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertIterableEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.assertj.core.api.Assertions.*;
 
 class CombinationTests {
-
-    @BeforeCombination
-    public void loadItems() {
-        // Loads all items into the cache so they are
-        // available before the tests start, this call
-        // is completely useless, its just so the compiler
-        // doesn't delete the unused code lol
-        Equipment galesForce = Equipment.GALES_FORCE;
-        System.out.println("Intializing combination tests, pre-loading item data");
-        System.out.println("Loaded Gale's: " + Arrays.toString(galesForce.requirements()));
-    }
 
     @CombinationTest
     public void invalid_requirement_simple(IAlgorithm algorithm, IPlayerBuilder builder) {
@@ -35,7 +18,9 @@ class CombinationTests {
         {
             builder.equipment(Equipment.GALES_FORCE);
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 0);
         assertValid(result);
         assertInvalid(result, Equipment.GALES_FORCE);
     }
@@ -47,7 +32,9 @@ class CombinationTests {
             builder.allocate(SkillPoint.AGILITY, 59);
             builder.equipment(Equipment.GALES_FORCE);
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 59);
         assertValid(result);
         assertInvalid(result, Equipment.GALES_FORCE);
     }
@@ -59,7 +46,9 @@ class CombinationTests {
             builder.allocate(SkillPoint.AGILITY, 60);
             builder.equipment(Equipment.GALES_FORCE);
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 60);
         assertValid(result, Equipment.GALES_FORCE);
         assertInvalid(result);
     }
@@ -71,7 +60,9 @@ class CombinationTests {
             builder.allocate(SkillPoint.AGILITY, 61);
             builder.equipment(Equipment.GALES_FORCE);
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 61);
         assertValid(result, Equipment.GALES_FORCE);
         assertInvalid(result);
     }
@@ -87,7 +78,9 @@ class CombinationTests {
                 Equipment.DIAMOND_STEAM_NECKLACE
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 84);
         assertValid(result);
         assertInvalid(result,
             Equipment.DIAMOND_STEAM_RING,
@@ -107,7 +100,9 @@ class CombinationTests {
                 Equipment.PHAGE_PINS
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 40, 0, 0, 45, 0);
         assertValid(result);
         assertInvalid(result,
             Equipment.CRYSTAL_COIL,
@@ -124,7 +119,9 @@ class CombinationTests {
                 Equipment.ALBEDO
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 45);
         assertValid(result);
         assertInvalid(result,
             Equipment.SOARFAE,
@@ -142,7 +139,9 @@ class CombinationTests {
                 Equipment.SHATTERGLASS
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 37, 70, 0, 0, 0);
         assertValid(result);
         assertInvalid(result,
             Equipment.BRAINWASH,
@@ -155,12 +154,16 @@ class CombinationTests {
         {
             builder.allocate(SkillPoint.AGILITY, 95);
             builder.equipment(
+                Equipment.DIAMOND_STEAM_RING,
                 Equipment.DIAMOND_STEAM_RING
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 0, 0, 0, 0, 95);
         assertValid(result);
         assertInvalid(result,
+            Equipment.DIAMOND_STEAM_RING,
             Equipment.DIAMOND_STEAM_RING
         );
     }
@@ -178,7 +181,9 @@ class CombinationTests {
                 Equipment.REPURPOSED_VESSELS
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 75, 42, 55, 52, -3);
         assertValid(result,
             Equipment.GRANITIC_METTLE,
             Equipment.RATION,
@@ -197,7 +202,9 @@ class CombinationTests {
                 Equipment.SHATTERGLASS
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 43, 0, 45, 0, 0);
         assertValid(result);
         assertInvalid(result,
             Equipment.SEISMOSOUL,
@@ -217,7 +224,9 @@ class CombinationTests {
                 Equipment.SHATTERGLASS
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 32, 70, 90, 0, 0);
         assertValid(result);
         assertInvalid(result,
             Equipment.BRAINWASH,
@@ -242,7 +251,9 @@ class CombinationTests {
                 Equipment.DAREDEVIL
             );
         }
-        IAlgorithm.Result result = algorithm.run(builder.build());
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 67, 68, -35, 68, 60);
         assertValid(result,
             Equipment.DARKSTEEL_FULL_HELM,
             Equipment.DARKSTEEL_CENTRIFUGE,
@@ -252,6 +263,56 @@ class CombinationTests {
             Equipment.DAREDEVIL
         );
         assertInvalid(result);
+    }
+
+    @CombinationTest
+    public void negative_enables_positive(IAlgorithm algorithm, IPlayerBuilder builder) {
+        // Repurposed Vessels grants +30 STR with negatives elsewhere; in
+        // isolation its DEX/DEF requirements are met by allocation, and
+        // its post-application state still keeps Vessels' own isValid
+        // satisfied (DEX 42 ≥ 45-3, DEF 42 ≥ 45-3). Granitic Mettle
+        // requires STR=75 which the player does not have until Vessels'
+        // +30 STR bonus is applied; Mettle in turn adds +10 DEF which
+        // strengthens Vessels' isValid further. Both items are valid.
+        {
+            builder.allocate(SkillPoint.STRENGTH, 45);
+            builder.allocate(SkillPoint.DEXTERITY, 45);
+            builder.allocate(SkillPoint.DEFENCE, 45);
+            builder.equipment(
+                Equipment.GRANITIC_METTLE,
+                Equipment.REPURPOSED_VESSELS
+            );
+        }
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 75, 42, -3, 52, -3);
+        assertValid(result,
+            Equipment.GRANITIC_METTLE,
+            Equipment.REPURPOSED_VESSELS
+        );
+        assertInvalid(result);
+    }
+
+    @CombinationTest
+    public void cascade_blocks_self_decay(IAlgorithm algorithm, IPlayerBuilder builder) {
+        // ACIDOSIS requires STR=60 and gives no bonus; player has STR=60
+        // exactly. ACHROMATIC_GLOOM has no requirements but applies -3 to
+        // every skill. Adding GLOOM after ACIDOSIS pushes STR to 57, which
+        // breaks ACIDOSIS' isValid (state 57 < req 60 + bonus 0). The
+        // cascade rule therefore rejects equipping both. Best valid set is
+        // {ACIDOSIS} on a weight tiebreak (5 × 0 vs 5 × -3 = -15).
+        {
+            builder.allocate(SkillPoint.STRENGTH, 60);
+            builder.equipment(
+                Equipment.ACIDOSIS,
+                Equipment.ACHROMATIC_GLOOM
+            );
+        }
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertSkillPoints(player, 60, 0, 0, 0, 0);
+        assertValid(result, Equipment.ACIDOSIS);
+        assertInvalid(result, Equipment.ACHROMATIC_GLOOM);
     }
 
     /**
@@ -276,5 +337,32 @@ class CombinationTests {
             .containsExactlyInAnyOrderElementsOf(result.invalid());
     }
 
+    /**
+     * Asserts the final skill point count for the player
+     *
+     * @param player the player to assert for
+     * @param strength the strength value
+     * @param dexterity the dexterity value
+     * @param intelligence the intelligence value
+     * @param defence the defence value
+     * @param agility the agility value
+     */
+    private static void assertSkillPoints(IPlayer player, int strength, int dexterity, int intelligence, int defence, int agility) {
+        assertThat(player.total(SkillPoint.STRENGTH))
+            .describedAs("Strength")
+            .isEqualTo(strength);
+        assertThat(player.total(SkillPoint.DEXTERITY))
+            .describedAs("Dexterity")
+            .isEqualTo(dexterity);
+        assertThat(player.total(SkillPoint.INTELLIGENCE))
+            .describedAs("Intelligence")
+            .isEqualTo(intelligence);
+        assertThat(player.total(SkillPoint.DEFENCE))
+            .describedAs("Defence")
+            .isEqualTo(defence);
+        assertThat(player.total(SkillPoint.AGILITY))
+            .describedAs("Agility")
+            .isEqualTo(agility);
+    }
 
 }

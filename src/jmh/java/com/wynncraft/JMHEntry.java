@@ -1,6 +1,7 @@
 package com.wynncraft;
 
-import com.wynncraft.benchmarks.EquipBenchmark;
+import com.wynncraft.benchmarks.FullEquipBenchmark;
+import com.wynncraft.benchmarks.OneByOneBenchmark;
 import com.wynncraft.core.interfaces.IPlayer;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
 import com.wynncraft.enums.SkillPoint;
@@ -172,7 +173,8 @@ public final class JMHEntry {
 
         Options options = new OptionsBuilder()
             .parent(new CommandLineOptions(args))
-            .include(EquipBenchmark.class.getName())
+            .include(FullEquipBenchmark.class.getName())
+            .include(OneByOneBenchmark.class.getName())
             .param("algorithm", algorithmNames)
             .build();
 
