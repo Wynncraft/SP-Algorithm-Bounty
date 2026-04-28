@@ -14,7 +14,38 @@ import java.util.stream.Stream;
 
 final class CombinationTestSupport {
 
+    private static final String ALGORITHM_PROPERTY = "algorithm";
+
     private CombinationTestSupport() { }
+
+    private static List<AlgorithmRegistry.Entry> selectedAlgorithms() {
+        String filter = System.getProperty(ALGORITHM_PROPERTY);
+        if (filter == null || filter.isBlank()) {
+            return AlgorithmRegistry.registry();
+        }
+
+        String normalizedFilter = normalize(filter);
+        List<AlgorithmRegistry.Entry> entries = AlgorithmRegistry.registry()
+            .stream()
+            .filter(entry -> matches(entry, normalizedFilter))
+            .toList();
+
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("No algorithm matched -D" + ALGORITHM_PROPERTY + "=\"" + filter + "\"");
+        }
+
+        return entries;
+    }
+
+    private static boolean matches(AlgorithmRegistry.Entry entry, String normalizedFilter) {
+        return normalize(entry.name()).contains(normalizedFilter)
+            || normalize(entry.algorithm().getClass().getSimpleName()).contains(normalizedFilter)
+            || normalize(entry.algorithm().getClass().getName()).contains(normalizedFilter);
+    }
+
+    private static String normalize(String value) {
+        return value.toLowerCase().replaceAll("[^a-z0-9]", "");
+    }
 
     static final class InvocationContextProvider implements TestTemplateInvocationContextProvider {
 
@@ -27,9 +58,9 @@ final class CombinationTestSupport {
 
         @Override
         public Stream<TestTemplateInvocationContext> provideTestTemplateInvocationContexts(ExtensionContext context) {
-            SummaryTable.get(context);
-            return AlgorithmRegistry.registry()
-                .stream()
+            List<AlgorithmRegistry.Entry> entries = selectedAlgorithms();
+            SummaryTable.get(context, entries);
+            return entries.stream()
                 .map(InvocationContext::new);
         }
 
@@ -165,16 +196,20 @@ final class CombinationTestSupport {
 
         private final Map<String, Counters> counts = new LinkedHashMap<>();
 
-        private SummaryTable() {
-            for (AlgorithmRegistry.Entry entry : AlgorithmRegistry.registry()) {
+        private SummaryTable(List<AlgorithmRegistry.Entry> entries) {
+            for (AlgorithmRegistry.Entry entry : entries) {
                 counts.putIfAbsent(entry.name(), new Counters());
             }
         }
 
-        static SummaryTable get(ExtensionContext context) {
+        static SummaryTable get(ExtensionContext context, List<AlgorithmRegistry.Entry> entries) {
             return context.getRoot()
                 .getStore(NAMESPACE)
-                .getOrComputeIfAbsent(KEY, key -> new SummaryTable(), SummaryTable.class);
+                .getOrComputeIfAbsent(KEY, key -> new SummaryTable(entries), SummaryTable.class);
+        }
+
+        static SummaryTable get(ExtensionContext context) {
+            return get(context, selectedAlgorithms());
         }
 
         synchronized void pass(String algorithmName) {

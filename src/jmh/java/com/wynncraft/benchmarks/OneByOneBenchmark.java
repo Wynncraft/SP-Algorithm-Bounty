@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 import static com.wynncraft.enums.Equipment.*;
 
 @BenchmarkMode(Mode.AverageTime)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 5, time = 100, timeUnit = TimeUnit.MILLISECONDS)
 @Measurement(iterations = 5, time = 100, timeUnit = TimeUnit.MILLISECONDS)
 @Fork(1)

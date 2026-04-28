@@ -10,6 +10,17 @@ version = '1.0.0'
 repositories {
     mavenCentral()
 }
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+}
+
 sourceSets {
     jmh {
         java.srcDir 'src/jmh/java'
@@ -33,6 +44,10 @@ dependencies {
 
 test {
     useJUnitPlatform()
+
+    if (project.hasProperty('algorithm')) {
+        systemProperty 'algorithm', project.property('algorithm')
+    }
 }
 
 tasks.register('jmh', JavaExec) {
