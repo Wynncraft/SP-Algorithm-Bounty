@@ -3,7 +3,6 @@ package com.wynncraft;
 
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
-import com.wynncraft.algorithms.WynnDeduplicatedBranchAlgorithm;
 import com.wynncraft.algorithms.WynnFrumaAlgorithm;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
@@ -21,9 +20,8 @@ public class AlgorithmRegistry {
         // Register here your algorithm here and your custom player if necessary!
         // Make sure your algorithm contains the @Information annotation
         // New additions always goes on the bottom for reference
-        register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
-        register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
-        register(new WynnDeduplicatedBranchAlgorithm(), WynnPlayer.Builder::new);
+        //register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
+        //register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
         register(new SubtractiveBnBAlgorithm(), WynnPlayer.Builder::new);
     }
 
