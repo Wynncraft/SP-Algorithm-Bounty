@@ -48,15 +48,15 @@ public class FullEquipBenchmark {
         _player = JMHEntry.build(build, entry);
     }
 
-    @Setup(value = Level.Iteration)
-    public void reset() {
-        // We must reset the player allocated points before each
-        // each individual test otherwise we will skew the data
-        _player.reset();
-    }
-
     @Benchmark
     public void full_equip(Blackhole blackhole) {
+        // We must reset the player allocated points before each
+        // each individual test otherwise we will skew the data
+        // this technically add some latency but it should even
+        // out in the results
+        _player.reset();
+
+        // Then after resetting run the algorithm
         IAlgorithm.Result result = _algorithm.run(_player);
         blackhole.consume(result);
     }

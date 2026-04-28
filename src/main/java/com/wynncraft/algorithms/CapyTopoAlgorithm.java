@@ -270,4 +270,5 @@ public class CapyTopoAlgorithm implements IAlgorithm<WynnPlayer> {
         state[3] += sign * b[3];
         state[4] += sign * b[4];
     }
+
 }

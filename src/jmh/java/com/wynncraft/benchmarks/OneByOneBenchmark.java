@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 import static com.wynncraft.enums.Equipment.*;
 
 @BenchmarkMode(Mode.AverageTime)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 5, time = 100, timeUnit = TimeUnit.MILLISECONDS)
 @Measurement(iterations = 5, time = 100, timeUnit = TimeUnit.MILLISECONDS)
 @Fork(1)
@@ -42,7 +42,6 @@ public class OneByOneBenchmark {
     public String algorithm;
 
     private AlgorithmRegistry.Entry _entry;
-    private IPlayerBuilder _builder;
 
     @Setup(value = Level.Trial)
     public void prepare() {
@@ -55,45 +54,57 @@ public class OneByOneBenchmark {
             .orElseThrow(() -> new IllegalArgumentException("Unknown algorithm benchmark parameter: " + algorithm));
     }
 
-    @Setup(Level.Iteration)
-    public void clean() {
-        // Before each iteration we need to create a
-        // new builder so we reset the build
-        _builder = _entry.builder();
-        _builder.allocate(SkillPoint.STRENGTH, 56);
-        _builder.allocate(SkillPoint.DEXTERITY, 37);
-        _builder.allocate(SkillPoint.INTELLIGENCE, 46);
-        _builder.allocate(SkillPoint.DEFENCE, 61);
-        _builder.allocate(SkillPoint.AGILITY, 0);
-    }
-
     @Benchmark
     public void one_by_one(Blackhole blackhole) {
+        // Allocate the initial player builder with the
+        // starting skill points, this might add some overhead
+        // but it should even out at the end of the test
+        IPlayerBuilder builder = _entry.builder();
+        {
+            builder.allocate(SkillPoint.STRENGTH, 56);
+            builder.allocate(SkillPoint.DEXTERITY, 37);
+            builder.allocate(SkillPoint.INTELLIGENCE, 46);
+            builder.allocate(SkillPoint.DEFENCE, 61);
+            builder.allocate(SkillPoint.AGILITY, 0);
+        }
+
         // On this benchmark we include each equipment one by one
         // in the common order (weapon -> armour -> accessory -> tomes)
         for (int i = 0; i < TARGET_BUILD.size(); i++) {
             // Include the next equipment
             IEquipment equipment = TARGET_BUILD.get(i);
-            _builder.equipment(equipment);
+            builder.equipment(equipment);
 
             // Run the algorithm with the new part
             IAlgorithm algorithm = _entry.algorithm();
-            blackhole.consume(algorithm.run(_builder.build()));
+            blackhole.consume(algorithm.run(builder.build()));
         }
     }
 
     @Benchmark
     public void one_by_one_inverse(Blackhole blackhole) {
+        // Allocate the initial player builder with the
+        // starting skill points, this might add some overhead
+        // but it should even out at the end of the test
+        IPlayerBuilder builder = _entry.builder();
+        {
+            builder.allocate(SkillPoint.STRENGTH, 56);
+            builder.allocate(SkillPoint.DEXTERITY, 37);
+            builder.allocate(SkillPoint.INTELLIGENCE, 46);
+            builder.allocate(SkillPoint.DEFENCE, 61);
+            builder.allocate(SkillPoint.AGILITY, 0);
+        }
+
         // On this benchmark we include each equipment one by one
         // in the inverse order (tomes -> accessories -> armour -> weapon)
         for (int size = TARGET_BUILD.size(); size > 0; size--) {
             // Include the next equipment
             IEquipment equipment = TARGET_BUILD.get(size - 1);
-            _builder.equipment(equipment);
+            builder.equipment(equipment);
 
             // Run the algorithm with the new part
             IAlgorithm algorithm = _entry.algorithm();
-            blackhole.consume(algorithm.run(_builder.build()));
+            blackhole.consume(algorithm.run(builder.build()));
         }
     }
 
