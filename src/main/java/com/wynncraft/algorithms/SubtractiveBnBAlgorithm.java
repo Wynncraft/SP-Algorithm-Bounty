@@ -32,6 +32,11 @@ import java.util.List;
  *
  * <p>Items are never grouped or deduplicated: every {@link IEquipment}
  * occupies its own bit and array slot.
+ *
+ * <p><b>Incremental setup cache:</b> when successive {@code run()} calls
+ * share a common item prefix (e.g. one-by-one sweeps), per-item data
+ * (req, bonus, weights, masks) is reused for the unchanged prefix and
+ * only new items are extracted. T is adjusted by the manual-SP delta.
  */
 @Information(name = "Subtractive BnB", version = 1, authors = {"Azael"})
 public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
@@ -50,8 +55,8 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
 
     /* ── Reusable per-run arrays ── */
 
-    private int[][] req    = new int[0][];
-    private int[][] bonus  = new int[0][];
+    private int[][] req     = new int[0][];
+    private int[][] bonus   = new int[0][];
     private int[]   weights = new int[0];
     private IEquipment[] itemArr = new IEquipment[0];
     private int n;
@@ -77,49 +82,75 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
     private final long[] visited = new long[VISITED_WORDS];
     private boolean useVisited;
 
+    /* ── Incremental setup cache ── */
+
+    /** Number of items whose data is currently valid in req/bonus/weights/masks/T. */
+    private int cachedN = 0;
+    /** Item references from the previous run, for prefix-match detection. */
+    private IEquipment[] cachedItemRefs = new IEquipment[0];
+    /** Manual SP values from the previous run, used to compute T delta. */
+    private final int[] cachedManual = new int[SK];
+    /** Sum of weights[i] for i in 0..cachedN-1 plus any new items added this run. */
+    private int cachedTotalWeight = 0;
+
     @Override
     public Result run(WynnPlayer player) {
         List<IEquipment> equipment = player.equipment();
         int eqSize = equipment.size();
+        n = eqSize;
 
+        // Read manual SP for this run
+        for (int s = 0; s < SK; s++) manual[s] = player.allocated(SP_VALS[s]);
+
+        // Grow arrays if needed
         if (req.length < eqSize) {
             int cap = Math.max(eqSize, 32);
-            req     = new int[cap][];
-            bonus   = new int[cap][];
-            weights = new int[cap];
-            itemArr = new IEquipment[cap];
+            req      = new int[cap][];
+            bonus    = new int[cap][];
+            weights  = new int[cap];
+            itemArr  = new IEquipment[cap];
         }
 
-        n = eqSize;
-        noReqMask = 0L;
-        Arrays.fill(negMask, 0L);
-
-        int initWeight = 0;
-        for (int i = 0; i < n; i++) {
-            IEquipment item = equipment.get(i);
-            req[i]   = item.requirements();
-            bonus[i] = item.bonuses();
-            boolean hr = false;
-            int w = 0;
-            for (int s = 0; s < SK; s++) {
-                if (req[i][s] > 0) hr = true;
-                if (bonus[i][s] < 0) negMask[s] |= (1L << i);
-                w += bonus[i][s];
+        // Determine how many leading items are unchanged from previous run.
+        // Incremental if: n >= cachedN and first cachedN item refs are identical.
+        int startFrom = 0;
+        if (n >= cachedN && cachedN > 0) {
+            startFrom = cachedN;
+            for (int i = 0; i < cachedN; i++) {
+                if (equipment.get(i) != cachedItemRefs[i]) { startFrom = 0; break; }
             }
-            weights[i]  = w;
-            initWeight += w;
-            if (!hr) noReqMask |= (1L << i);
-            itemArr[i] = item;
         }
 
-        for (int s = 0; s < SK; s++) {
-            manual[s] = player.allocated(SP_VALS[s]);
-            T[s]      = manual[s];
+        if (startFrom == 0) {
+            // Full re-init: clear masks, rebuild T from scratch
+            noReqMask = 0L;
+            Arrays.fill(negMask, 0L);
+            for (int s = 0; s < SK; s++) T[s] = manual[s];
+            cachedTotalWeight = 0;
+            for (int i = 0; i < n; i++) {
+                setupItem(i, equipment.get(i));
+                cachedTotalWeight += weights[i];
+                T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
+                T[3] += bonus[i][3]; T[4] += bonus[i][4];
+            }
+        } else {
+            // Incremental: adjust T for manual-SP delta, then add only new items
+            T[0] += manual[0] - cachedManual[0]; T[1] += manual[1] - cachedManual[1];
+            T[2] += manual[2] - cachedManual[2]; T[3] += manual[3] - cachedManual[3];
+            T[4] += manual[4] - cachedManual[4];
+            for (int i = startFrom; i < n; i++) {
+                setupItem(i, equipment.get(i));
+                cachedTotalWeight += weights[i];
+                T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
+                T[3] += bonus[i][3]; T[4] += bonus[i][4];
+            }
         }
-        for (int i = 0; i < n; i++) {
-            T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
-            T[3] += bonus[i][3]; T[4] += bonus[i][4];
-        }
+
+        // Update cache for next run
+        if (cachedItemRefs.length < n) cachedItemRefs = new IEquipment[Math.max(n, 32)];
+        for (int i = startFrom; i < n; i++) cachedItemRefs[i] = itemArr[i];
+        cachedN = n;
+        System.arraycopy(manual, 0, cachedManual, 0, SK);
 
         long fullMask = (n == 64) ? -1L : (1L << n) - 1L;
 
@@ -127,7 +158,7 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         bestWeight = Integer.MIN_VALUE;
         bestMask   = 0L;
 
-        // Initialise visited arena.
+        // Initialise visited arena
         useVisited = (n <= N_VISITED_BITS);
         if (useVisited) {
             int wordsToClear = (1 << n) / 64 + 1;
@@ -135,7 +166,7 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
             Arrays.fill(visited, 0, wordsToClear, 0L);
         }
 
-        dfs(fullMask, n, initWeight);
+        dfs(fullMask, n, cachedTotalWeight);
 
         int validCount = (int) Long.bitCount(bestMask);
         List<IEquipment> valid   = new ArrayList<>(validCount);
@@ -151,6 +182,22 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         }
 
         return new Result(valid, invalid);
+    }
+
+    /** Extract req/bonus/weight for item at index i and update masks. */
+    private void setupItem(int i, IEquipment item) {
+        req[i]   = item.requirements();
+        bonus[i] = item.bonuses();
+        boolean hr = false;
+        int w = 0;
+        for (int s = 0; s < SK; s++) {
+            if (req[i][s] > 0) hr = true;
+            if (bonus[i][s] < 0) negMask[s] |= (1L << i);
+            w += bonus[i][s];
+        }
+        weights[i] = w;
+        if (!hr) noReqMask |= (1L << i);
+        itemArr[i] = item;
     }
 
     /**
