@@ -32,8 +32,13 @@ import java.util.List;
  *
  * <p>Items are never grouped or deduplicated: every {@link IEquipment}
  * occupies its own bit and array slot.
+ *
+ * <p><b>Incremental setup cache:</b> when successive {@code run()} calls
+ * share a common item prefix (e.g. one-by-one sweeps), per-item data
+ * (req, bonus, weights, masks) is reused for the unchanged prefix and
+ * only new items are extracted. T is adjusted by the manual-SP delta.
  */
-@Information(name = "Subtractive BnB", version = 2, authors = {"Azael"})
+@Information(name = "Subtractive BnB", version = 1, authors = {"Azael"})
 public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
 
     private static final int SK = SkillPoint.values().length;
@@ -48,12 +53,10 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
     private static final int N_VISITED_BITS = 22;
     private static final int VISITED_WORDS  = (1 << N_VISITED_BITS) / 64;
 
-    /* ── Reusable per-run arrays (flat for cache locality) ── */
+    /* ── Reusable per-run arrays ── */
 
-    /** Flat array: reqFlat[i*SK + s] = requirement of item i on skill s. */
-    private int[] reqFlat   = new int[0];
-    /** Flat array: bonusFlat[i*SK + s] = bonus of item i on skill s. */
-    private int[] bonusFlat = new int[0];
+    private int[][] req     = new int[0][];
+    private int[][] bonus   = new int[0][];
     private int[]   weights = new int[0];
     private IEquipment[] itemArr = new IEquipment[0];
     private int n;
@@ -81,7 +84,7 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
 
     /* ── Incremental setup cache ── */
 
-    /** Number of items whose data is currently valid in the flat arrays. */
+    /** Number of items whose data is currently valid in req/bonus/weights/masks/T. */
     private int cachedN = 0;
     /** Item references from the previous run, for prefix-match detection. */
     private IEquipment[] cachedItemRefs = new IEquipment[0];
@@ -89,9 +92,6 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
     private final int[] cachedManual = new int[SK];
     /** Sum of weights[i] for i in 0..cachedN-1 plus any new items added this run. */
     private int cachedTotalWeight = 0;
-
-    /* ── Small scratch buffer for branch ordering ── */
-    private final int[] branchOrder = new int[64];
 
     @Override
     public Result run(WynnPlayer player) {
@@ -103,12 +103,12 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         for (int s = 0; s < SK; s++) manual[s] = player.allocated(SP_VALS[s]);
 
         // Grow arrays if needed
-        if (reqFlat.length < eqSize * SK) {
+        if (req.length < eqSize) {
             int cap = Math.max(eqSize, 32);
-            reqFlat   = new int[cap * SK];
-            bonusFlat = new int[cap * SK];
-            weights   = new int[cap];
-            itemArr   = new IEquipment[cap];
+            req      = new int[cap][];
+            bonus    = new int[cap][];
+            weights  = new int[cap];
+            itemArr  = new IEquipment[cap];
         }
 
         // Determine how many leading items are unchanged from previous run.
@@ -130,27 +130,19 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
             for (int i = 0; i < n; i++) {
                 setupItem(i, equipment.get(i));
                 cachedTotalWeight += weights[i];
-                T[0] += bonusFlat[i * SK];
-                T[1] += bonusFlat[i * SK + 1];
-                T[2] += bonusFlat[i * SK + 2];
-                T[3] += bonusFlat[i * SK + 3];
-                T[4] += bonusFlat[i * SK + 4];
+                T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
+                T[3] += bonus[i][3]; T[4] += bonus[i][4];
             }
         } else {
             // Incremental: adjust T for manual-SP delta, then add only new items
-            T[0] += manual[0] - cachedManual[0];
-            T[1] += manual[1] - cachedManual[1];
-            T[2] += manual[2] - cachedManual[2];
-            T[3] += manual[3] - cachedManual[3];
+            T[0] += manual[0] - cachedManual[0]; T[1] += manual[1] - cachedManual[1];
+            T[2] += manual[2] - cachedManual[2]; T[3] += manual[3] - cachedManual[3];
             T[4] += manual[4] - cachedManual[4];
             for (int i = startFrom; i < n; i++) {
                 setupItem(i, equipment.get(i));
                 cachedTotalWeight += weights[i];
-                T[0] += bonusFlat[i * SK];
-                T[1] += bonusFlat[i * SK + 1];
-                T[2] += bonusFlat[i * SK + 2];
-                T[3] += bonusFlat[i * SK + 3];
-                T[4] += bonusFlat[i * SK + 4];
+                T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
+                T[3] += bonus[i][3]; T[4] += bonus[i][4];
             }
         }
 
@@ -166,119 +158,15 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         bestWeight = Integer.MIN_VALUE;
         bestMask   = 0L;
 
-        /* ── Fast path 0: full set already valid ── */
-        boolean needsDfs = true;
-        if (cascadePass(fullMask) && orderingPass(fullMask)) {
-            bestCount  = n;
-            bestWeight = cachedTotalWeight;
-            bestMask   = fullMask;
-            needsDfs   = false;
+        // Initialise visited arena
+        useVisited = (n <= N_VISITED_BITS);
+        if (useVisited) {
+            int wordsToClear = (1 << n) / 64 + 1;
+            if (wordsToClear > VISITED_WORDS) wordsToClear = VISITED_WORDS;
+            Arrays.fill(visited, 0, wordsToClear, 0L);
         }
 
-        /* ── Fast path for n = 0 or 1 ── */
-        if (needsDfs && n <= 1) {
-            if (n == 0) {
-                bestCount = 0; bestWeight = 0; bestMask = 0L;
-            } else {
-                // n == 1 and not valid → empty set is best
-                bestCount = 0; bestWeight = 0; bestMask = 0L;
-            }
-            needsDfs = false;
-        }
-
-        /* ── Fast path 1: try removing a single item ── */
-        if (needsDfs && n > 1) {
-            // Find the worst violator (same logic as dfs root)
-            int worstI = -1, worstS = -1, worstD = 0;
-            long iter = fullMask & ~noReqMask;
-            while (iter != 0L) {
-                long bit = iter & -iter; iter ^= bit;
-                int i = Long.numberOfTrailingZeros(bit);
-                int b = i * SK;
-                if (reqFlat[b] > 0) {
-                    int d = reqFlat[b] + bonusFlat[b] - T[0];
-                    if (d > worstD) { worstD = d; worstI = i; worstS = 0; }
-                }
-                if (reqFlat[b + 1] > 0) {
-                    int d = reqFlat[b + 1] + bonusFlat[b + 1] - T[1];
-                    if (d > worstD) { worstD = d; worstI = i; worstS = 1; }
-                }
-                if (reqFlat[b + 2] > 0) {
-                    int d = reqFlat[b + 2] + bonusFlat[b + 2] - T[2];
-                    if (d > worstD) { worstD = d; worstI = i; worstS = 2; }
-                }
-                if (reqFlat[b + 3] > 0) {
-                    int d = reqFlat[b + 3] + bonusFlat[b + 3] - T[3];
-                    if (d > worstD) { worstD = d; worstI = i; worstS = 3; }
-                }
-                if (reqFlat[b + 4] > 0) {
-                    int d = reqFlat[b + 4] + bonusFlat[b + 4] - T[4];
-                    if (d > worstD) { worstD = d; worstI = i; worstS = 4; }
-                }
-            }
-
-            if (worstI != -1) {
-                // Collect candidates: violator + negative contributors on worst skill
-                int bc = 0;
-                branchOrder[bc++] = worstI;
-                long negs = fullMask & negMask[worstS] & ~(1L << worstI);
-                while (negs != 0L) {
-                    long bit = negs & -negs; negs ^= bit;
-                    branchOrder[bc++] = Long.numberOfTrailingZeros(bit);
-                }
-                // Sort by ascending weight (most negative first → highest nextWeight)
-                for (int a = 1; a < bc; a++) {
-                    int key = branchOrder[a];
-                    int j = a - 1;
-                    while (j >= 0 && weights[branchOrder[j]] > weights[key]) {
-                        branchOrder[j + 1] = branchOrder[j];
-                        j--;
-                    }
-                    branchOrder[j + 1] = key;
-                }
-
-                for (int idx = 0; idx < bc; idx++) {
-                    int i = branchOrder[idx];
-                    int w = cachedTotalWeight - weights[i];
-                    if (n - 1 < bestCount || (n - 1 == bestCount && w <= bestWeight)) continue;
-
-                    int base = i * SK;
-                    T[0] -= bonusFlat[base];
-                    T[1] -= bonusFlat[base + 1];
-                    T[2] -= bonusFlat[base + 2];
-                    T[3] -= bonusFlat[base + 3];
-                    T[4] -= bonusFlat[base + 4];
-
-                    long m = fullMask ^ (1L << i);
-                    if (cascadePass(m) && orderingPass(m)) {
-                        bestCount  = n - 1;
-                        bestWeight = w;
-                        bestMask   = m;
-                    }
-
-                    T[0] += bonusFlat[base];
-                    T[1] += bonusFlat[base + 1];
-                    T[2] += bonusFlat[base + 2];
-                    T[3] += bonusFlat[base + 3];
-                    T[4] += bonusFlat[base + 4];
-                }
-
-                if (bestCount >= n - 1) {
-                    needsDfs = false;
-                }
-            }
-        }
-
-        /* ── General DFS for deeper searches ── */
-        if (needsDfs) {
-            useVisited = (n <= N_VISITED_BITS);
-            if (useVisited) {
-                int wordsToClear = (1 << n) / 64 + 1;
-                if (wordsToClear > VISITED_WORDS) wordsToClear = VISITED_WORDS;
-                Arrays.fill(visited, 0, wordsToClear, 0L);
-            }
-            dfs(fullMask, n, cachedTotalWeight);
-        }
+        dfs(fullMask, n, cachedTotalWeight);
 
         int validCount = (int) Long.bitCount(bestMask);
         List<IEquipment> valid   = new ArrayList<>(validCount);
@@ -298,79 +186,18 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
 
     /** Extract req/bonus/weight for item at index i and update masks. */
     private void setupItem(int i, IEquipment item) {
-        int[] r = item.requirements();
-        int[] b = item.bonuses();
-        int base = i * SK;
+        req[i]   = item.requirements();
+        bonus[i] = item.bonuses();
         boolean hr = false;
         int w = 0;
         for (int s = 0; s < SK; s++) {
-            reqFlat[base + s]   = r[s];
-            bonusFlat[base + s] = b[s];
-            if (r[s] > 0) hr = true;
-            if (b[s] < 0) negMask[s] |= (1L << i);
-            w += b[s];
+            if (req[i][s] > 0) hr = true;
+            if (bonus[i][s] < 0) negMask[s] |= (1L << i);
+            w += bonus[i][s];
         }
         weights[i] = w;
         if (!hr) noReqMask |= (1L << i);
         itemArr[i] = item;
-    }
-
-    /** Cascade check using current {@code T}. */
-    private boolean cascadePass(long active) {
-        long iter = active & ~noReqMask;
-        while (iter != 0L) {
-            long bit = iter & -iter; iter ^= bit;
-            int i = Long.numberOfTrailingZeros(bit);
-            int b = i * SK;
-            if (reqFlat[b]     > 0 && reqFlat[b]     + bonusFlat[b]     > T[0]) return false;
-            if (reqFlat[b + 1] > 0 && reqFlat[b + 1] + bonusFlat[b + 1] > T[1]) return false;
-            if (reqFlat[b + 2] > 0 && reqFlat[b + 2] + bonusFlat[b + 2] > T[2]) return false;
-            if (reqFlat[b + 3] > 0 && reqFlat[b + 3] + bonusFlat[b + 3] > T[3]) return false;
-            if (reqFlat[b + 4] > 0 && reqFlat[b + 4] + bonusFlat[b + 4] > T[4]) return false;
-        }
-        return true;
-    }
-
-    /** Ordering check using current manual and bonuses. */
-    private boolean orderingPass(long active) {
-        int os0 = manual[0], os1 = manual[1], os2 = manual[2], os3 = manual[3], os4 = manual[4];
-        long nra = active & noReqMask;
-        while (nra != 0L) {
-            long bit = nra & -nra; nra ^= bit;
-            int i = Long.numberOfTrailingZeros(bit);
-            int b = i * SK;
-            if (bonusFlat[b]     > 0) os0 += bonusFlat[b];
-            if (bonusFlat[b + 1] > 0) os1 += bonusFlat[b + 1];
-            if (bonusFlat[b + 2] > 0) os2 += bonusFlat[b + 2];
-            if (bonusFlat[b + 3] > 0) os3 += bonusFlat[b + 3];
-            if (bonusFlat[b + 4] > 0) os4 += bonusFlat[b + 4];
-        }
-
-        long remaining = active & ~noReqMask;
-        boolean progress = true;
-        while (progress && remaining != 0L) {
-            progress = false;
-            long ri2 = remaining;
-            while (ri2 != 0L) {
-                long bit = ri2 & -ri2; ri2 ^= bit;
-                int i = Long.numberOfTrailingZeros(bit);
-                int b = i * SK;
-                if ((reqFlat[b]     <= 0 || os0 >= reqFlat[b]) &&
-                    (reqFlat[b + 1] <= 0 || os1 >= reqFlat[b + 1]) &&
-                    (reqFlat[b + 2] <= 0 || os2 >= reqFlat[b + 2]) &&
-                    (reqFlat[b + 3] <= 0 || os3 >= reqFlat[b + 3]) &&
-                    (reqFlat[b + 4] <= 0 || os4 >= reqFlat[b + 4])) {
-                    os0 += bonusFlat[b];
-                    os1 += bonusFlat[b + 1];
-                    os2 += bonusFlat[b + 2];
-                    os3 += bonusFlat[b + 3];
-                    os4 += bonusFlat[b + 4];
-                    remaining ^= bit;
-                    progress = true;
-                }
-            }
-        }
-        return remaining == 0L;
     }
 
     /**
@@ -390,69 +217,46 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         while (iter != 0L) {
             long bit = iter & -iter; iter ^= bit;
             int i = Long.numberOfTrailingZeros(bit);
-            int b = i * SK;
-            if (reqFlat[b] > 0) {
-                int d = reqFlat[b] + bonusFlat[b] - T[0];
-                if (d > worstD) { worstD = d; worstI = i; worstS = 0; }
-            }
-            if (reqFlat[b + 1] > 0) {
-                int d = reqFlat[b + 1] + bonusFlat[b + 1] - T[1];
-                if (d > worstD) { worstD = d; worstI = i; worstS = 1; }
-            }
-            if (reqFlat[b + 2] > 0) {
-                int d = reqFlat[b + 2] + bonusFlat[b + 2] - T[2];
-                if (d > worstD) { worstD = d; worstI = i; worstS = 2; }
-            }
-            if (reqFlat[b + 3] > 0) {
-                int d = reqFlat[b + 3] + bonusFlat[b + 3] - T[3];
-                if (d > worstD) { worstD = d; worstI = i; worstS = 3; }
-            }
-            if (reqFlat[b + 4] > 0) {
-                int d = reqFlat[b + 4] + bonusFlat[b + 4] - T[4];
-                if (d > worstD) { worstD = d; worstI = i; worstS = 4; }
-            }
+            int[] ri = req[i], bi = bonus[i];
+            if (ri[0] > 0) { int d = ri[0] + bi[0] - T[0]; if (d > worstD) { worstD = d; worstI = i; worstS = 0; } }
+            if (ri[1] > 0) { int d = ri[1] + bi[1] - T[1]; if (d > worstD) { worstD = d; worstI = i; worstS = 1; } }
+            if (ri[2] > 0) { int d = ri[2] + bi[2] - T[2]; if (d > worstD) { worstD = d; worstI = i; worstS = 2; } }
+            if (ri[3] > 0) { int d = ri[3] + bi[3] - T[3]; if (d > worstD) { worstD = d; worstI = i; worstS = 3; } }
+            if (ri[4] > 0) { int d = ri[4] + bi[4] - T[4]; if (d > worstD) { worstD = d; worstI = i; worstS = 4; } }
         }
 
         if (worstI != -1) {
-            // Cascade violated — branch on removing worstI or negative contributors.
-            // Collect and sort candidates so best tie-break is found first.
-            int bc = 0;
-            branchOrder[bc++] = worstI;
+            tryRemove(active, count, weight, worstI);
             long negs = active & negMask[worstS] & ~(1L << worstI);
             while (negs != 0L) {
                 long bit = negs & -negs; negs ^= bit;
-                branchOrder[bc++] = Long.numberOfTrailingZeros(bit);
-            }
-            for (int a = 1; a < bc; a++) {
-                int key = branchOrder[a];
-                int j = a - 1;
-                while (j >= 0 && weights[branchOrder[j]] > weights[key]) {
-                    branchOrder[j + 1] = branchOrder[j];
-                    j--;
-                }
-                branchOrder[j + 1] = key;
-            }
-            for (int idx = 0; idx < bc; idx++) {
-                tryRemove(active, count, weight, branchOrder[idx]);
+                tryRemove(active, count, weight, Long.numberOfTrailingZeros(bit));
             }
             return;
         }
 
         // ── Step 2: Ordering check ─────────────────────────────────────
+        // A set may pass cascade yet have no valid equipping sequence
+        // (co-bootstrap). Detect with a two-phase greedy fixed-point.
+        //
+        // Phase 2a: seed ordering state with manual plus positive bonuses
+        // from no-req items (always equippable first, only help others).
         int os0 = manual[0], os1 = manual[1], os2 = manual[2],
             os3 = manual[3], os4 = manual[4];
         long nra = active & noReqMask;
         while (nra != 0L) {
             long bit = nra & -nra; nra ^= bit;
             int i = Long.numberOfTrailingZeros(bit);
-            int b = i * SK;
-            if (bonusFlat[b]     > 0) os0 += bonusFlat[b];
-            if (bonusFlat[b + 1] > 0) os1 += bonusFlat[b + 1];
-            if (bonusFlat[b + 2] > 0) os2 += bonusFlat[b + 2];
-            if (bonusFlat[b + 3] > 0) os3 += bonusFlat[b + 3];
-            if (bonusFlat[b + 4] > 0) os4 += bonusFlat[b + 4];
+            if (bonus[i][0] > 0) os0 += bonus[i][0];
+            if (bonus[i][1] > 0) os1 += bonus[i][1];
+            if (bonus[i][2] > 0) os2 += bonus[i][2];
+            if (bonus[i][3] > 0) os3 += bonus[i][3];
+            if (bonus[i][4] > 0) os4 += bonus[i][4];
         }
 
+        // Phase 2b: greedy equipping for req-items only.
+        // No-req items with negative bonuses are deferred to last (always
+        // equippable there; cascade already passed so isValid still holds).
         long remaining = active & ~noReqMask;
         boolean progress = true;
         while (progress && remaining != 0L) {
@@ -461,17 +265,14 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
             while (ri2 != 0L) {
                 long bit = ri2 & -ri2; ri2 ^= bit;
                 int i = Long.numberOfTrailingZeros(bit);
-                int b = i * SK;
-                if ((reqFlat[b]     <= 0 || os0 >= reqFlat[b]) &&
-                    (reqFlat[b + 1] <= 0 || os1 >= reqFlat[b + 1]) &&
-                    (reqFlat[b + 2] <= 0 || os2 >= reqFlat[b + 2]) &&
-                    (reqFlat[b + 3] <= 0 || os3 >= reqFlat[b + 3]) &&
-                    (reqFlat[b + 4] <= 0 || os4 >= reqFlat[b + 4])) {
-                    os0 += bonusFlat[b];
-                    os1 += bonusFlat[b + 1];
-                    os2 += bonusFlat[b + 2];
-                    os3 += bonusFlat[b + 3];
-                    os4 += bonusFlat[b + 4];
+                int[] r = req[i];
+                if ((r[0] <= 0 || os0 >= r[0]) &&
+                    (r[1] <= 0 || os1 >= r[1]) &&
+                    (r[2] <= 0 || os2 >= r[2]) &&
+                    (r[3] <= 0 || os3 >= r[3]) &&
+                    (r[4] <= 0 || os4 >= r[4])) {
+                    os0 += bonus[i][0]; os1 += bonus[i][1]; os2 += bonus[i][2];
+                    os3 += bonus[i][3]; os4 += bonus[i][4];
                     remaining ^= bit;
                     progress = true;
                 }
@@ -491,53 +292,25 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
         while (si != 0L) {
             long bit = si & -si; si ^= bit;
             int i = Long.numberOfTrailingZeros(bit);
-            int b = i * SK;
-            if (reqFlat[b] > 0) {
-                int d = reqFlat[b] - os0;
-                if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 0; }
-            }
-            if (reqFlat[b + 1] > 0) {
-                int d = reqFlat[b + 1] - os1;
-                if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 1; }
-            }
-            if (reqFlat[b + 2] > 0) {
-                int d = reqFlat[b + 2] - os2;
-                if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 2; }
-            }
-            if (reqFlat[b + 3] > 0) {
-                int d = reqFlat[b + 3] - os3;
-                if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 3; }
-            }
-            if (reqFlat[b + 4] > 0) {
-                int d = reqFlat[b + 4] - os4;
-                if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 4; }
-            }
+            int[] r = req[i];
+            if (r[0] > 0) { int d = r[0] - os0; if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 0; } }
+            if (r[1] > 0) { int d = r[1] - os1; if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 1; } }
+            if (r[2] > 0) { int d = r[2] - os2; if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 2; } }
+            if (r[3] > 0) { int d = r[3] - os3; if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 3; } }
+            if (r[4] > 0) { int d = r[4] - os4; if (d > stuckD) { stuckD = d; stuckI = i; stuckS = 4; } }
         }
 
         if (stuckI == -1) {
+            // All remaining were no-req; can't happen (they're excluded from remaining).
             bestCount = count; bestWeight = weight; bestMask = active;
             return;
         }
 
-        // Branch on stuck item and negative contributors on stuck skill
-        int bc = 0;
-        branchOrder[bc++] = stuckI;
+        tryRemove(active, count, weight, stuckI);
         long negs = active & negMask[stuckS] & ~(1L << stuckI);
         while (negs != 0L) {
             long bit = negs & -negs; negs ^= bit;
-            branchOrder[bc++] = Long.numberOfTrailingZeros(bit);
-        }
-        for (int a = 1; a < bc; a++) {
-            int key = branchOrder[a];
-            int j = a - 1;
-            while (j >= 0 && weights[branchOrder[j]] > weights[key]) {
-                branchOrder[j + 1] = branchOrder[j];
-                j--;
-            }
-            branchOrder[j + 1] = key;
-        }
-        for (int idx = 0; idx < bc; idx++) {
-            tryRemove(active, count, weight, branchOrder[idx]);
+            tryRemove(active, count, weight, Long.numberOfTrailingZeros(bit));
         }
     }
 
@@ -556,21 +329,16 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
                 if ((visited[word] & b) != 0L) return;
                 visited[word] |= b;
             }
+            // For n > N_VISITED_BITS: skip memoisation (rare; accept possible
+            // re-exploration rather than risk hash-table overflow).
         }
 
-        int base = i * SK;
-        T[0] -= bonusFlat[base];
-        T[1] -= bonusFlat[base + 1];
-        T[2] -= bonusFlat[base + 2];
-        T[3] -= bonusFlat[base + 3];
-        T[4] -= bonusFlat[base + 4];
+        T[0] -= bonus[i][0]; T[1] -= bonus[i][1]; T[2] -= bonus[i][2];
+        T[3] -= bonus[i][3]; T[4] -= bonus[i][4];
 
         dfs(next, nextCount, nextWeight);
 
-        T[0] += bonusFlat[base];
-        T[1] += bonusFlat[base + 1];
-        T[2] += bonusFlat[base + 2];
-        T[3] += bonusFlat[base + 3];
-        T[4] += bonusFlat[base + 4];
+        T[0] += bonus[i][0]; T[1] += bonus[i][1]; T[2] += bonus[i][2];
+        T[3] += bonus[i][3]; T[4] += bonus[i][4];
     }
 }
