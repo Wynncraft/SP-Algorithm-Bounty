@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-@Information(name = "NegativeOrderAlgorithm", version = 2, authors = "RedLogic")
+@Information(name = "Negative Order", version = 2, authors = "RedLogic")
 public class NegativeOrderAlgorithm implements IAlgorithm<WynnPlayer> {
 
     private static final int N_SKILLS = SkillPoint.values().length;
