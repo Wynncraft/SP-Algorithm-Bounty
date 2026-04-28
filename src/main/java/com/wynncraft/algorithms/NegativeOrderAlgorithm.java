@@ -7,186 +7,224 @@ import com.wynncraft.core.interfaces.Information;
 import com.wynncraft.enums.SkillPoint;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 
-@Information(name = "NegativeOrderAlgorithm", version = 1, authors = "RedLogic")
+@Information(name = "NegativeOrderAlgorithm", version = 2, authors = "RedLogic")
 public class NegativeOrderAlgorithm implements IAlgorithm<WynnPlayer> {
 
-    private static final SkillPoint[] SKILL_POINTS = SkillPoint.values();
+    private static final int N_SKILLS = SkillPoint.values().length;
+    private static final int VISITED_BITS = 22;
+    private static final int VISITED_WORDS = (1 << VISITED_BITS) / 64;
+
+    private final int[] state = new int[N_SKILLS];
+    private final long[] visited = new long[VISITED_WORDS];
+
+    private int[][] requirements = new int[0][];
+    private int[][] bonuses = new int[0][];
+    private int[] weights = new int[0];
+    private boolean[] hasRequirements = new boolean[0];
+    private boolean[] hasNegativeBonus = new boolean[0];
+    private IEquipment[] items = new IEquipment[0];
+
+    private int count;
+    private boolean useVisited;
+    private int bestCount;
+    private int bestWeight;
+    private long bestMask;
 
     @Override
     public Result run(WynnPlayer player) {
-        SearchContext context = new SearchContext(player);
-        context.search();
-        return context.best.asResult(context.positive, context.negative);
+        prepare(player);
+
+        long activeMask = activateFreeItems();
+        int activeCount = Long.bitCount(activeMask);
+        int activeWeight = currentWeight(activeMask);
+        bestCount = activeCount;
+        bestWeight = activeWeight;
+        bestMask = activeMask;
+
+        long allMask = count == 64 ? -1L : (1L << count) - 1L;
+        long remainingMask = allMask & ~activeMask;
+
+        useVisited = count <= VISITED_BITS;
+        if (useVisited) {
+            int wordsToClear = Math.min(((1 << count) / 64) + 1, VISITED_WORDS);
+            Arrays.fill(visited, 0, wordsToClear, 0L);
+        }
+
+        search(activeMask, remainingMask, activeCount, activeWeight);
+
+        List<IEquipment> valid = new ArrayList<>(Long.bitCount(bestMask));
+        List<IEquipment> invalid = new ArrayList<>(count - Long.bitCount(bestMask));
+        for (int i = 0; i < count; i++) {
+            if ((bestMask & (1L << i)) != 0L) {
+                valid.add(items[i]);
+            } else {
+                invalid.add(items[i]);
+            }
+        }
+
+        player.reset();
+        for (int i = 0; i < valid.size(); i++) {
+            player.modify(valid.get(i).bonuses(), true);
+        }
+
+        return new Result(valid, invalid);
     }
 
-    private static final class SearchContext {
+    private void prepare(WynnPlayer player) {
+        List<IEquipment> equipment = player.equipment();
+        count = equipment.size();
 
-        private final List<IEquipment> positive = new ArrayList<>();
-        private final List<IEquipment> negative = new ArrayList<>();
+        if (items.length < count) {
+            int capacity = Math.max(count, 32);
+            requirements = new int[capacity][];
+            bonuses = new int[capacity][];
+            weights = new int[capacity];
+            hasRequirements = new boolean[capacity];
+            hasNegativeBonus = new boolean[capacity];
+            items = new IEquipment[capacity];
+        }
 
-        private final int[] baseTotals = new int[SKILL_POINTS.length];
-        private final int[] positiveWeights;
-        private final int[] negativeWeights;
-        private final Set<StateKey> visited = new HashSet<>();
+        for (int i = 0; i < count; i++) {
+            IEquipment item = equipment.get(i);
+            items[i] = item;
+            requirements[i] = item.requirements();
+            bonuses[i] = item.bonuses();
 
-        private BestResult best;
-
-        private SearchContext(WynnPlayer player) {
-            List<IEquipment> equipment = player.equipment();
-            for (int i = 0; i < equipment.size(); i++) {
-                IEquipment item = equipment.get(i);
-                if (item.hasNegativeBonus()) {
-                    negative.add(item);
-                } else {
-                    positive.add(item);
+            int weight = 0;
+            boolean hasReq = false;
+            boolean hasNeg = false;
+            for (int s = 0; s < N_SKILLS; s++) {
+                if (requirements[i][s] > 0) {
+                    hasReq = true;
                 }
+                if (bonuses[i][s] < 0) {
+                    hasNeg = true;
+                }
+                weight += bonuses[i][s];
             }
-
-            if (positive.size() >= Long.SIZE || negative.size() >= Long.SIZE) {
-                throw new IllegalArgumentException("NegativeOrderAlgorithm supports up to 63 positive and 63 negative items");
-            }
-
-            for (int i = 0; i < baseTotals.length; i++) {
-                baseTotals[i] = player.allocated(SKILL_POINTS[i]);
-            }
-
-            positiveWeights = new int[positive.size()];
-            for (int i = 0; i < positive.size(); i++) {
-                positiveWeights[i] = weight(positive.get(i).bonuses());
-            }
-
-            negativeWeights = new int[negative.size()];
-            for (int i = 0; i < negative.size(); i++) {
-                negativeWeights[i] = weight(negative.get(i).bonuses());
-            }
-
-            best = BestResult.empty();
+            weights[i] = weight;
+            hasRequirements[i] = hasReq;
+            hasNegativeBonus[i] = hasNeg;
         }
 
-        private void search() {
-            dfs(0L, 0L, baseTotals.clone(), 0);
+        SkillPoint[] points = SkillPoint.values();
+        for (int s = 0; s < N_SKILLS; s++) {
+            state[s] = player.allocated(points[s]);
+        }
+    }
+
+    private long activateFreeItems() {
+        long mask = 0L;
+        for (int i = 0; i < count; i++) {
+            if (hasRequirements[i] || hasNegativeBonus[i]) {
+                continue;
+            }
+
+            applyBonus(i, 1);
+            mask |= 1L << i;
+        }
+        return mask;
+    }
+
+    private int currentWeight(long mask) {
+        int total = 0;
+        long iter = mask;
+        while (iter != 0L) {
+            long bit = iter & -iter;
+            iter ^= bit;
+            total += weights[Long.numberOfTrailingZeros(bit)];
+        }
+        return total;
+    }
+
+    private void search(long activeMask, long remainingMask, int activeCount, int activeWeight) {
+        if (activeCount > bestCount || (activeCount == bestCount && activeWeight > bestWeight)) {
+            bestCount = activeCount;
+            bestWeight = activeWeight;
+            bestMask = activeMask;
         }
 
-        private void dfs(long positiveMask, long negativeMask, int[] totals, int weight) {
-            Saturation saturation = saturatePositive(positiveMask, totals, weight);
-            positiveMask = saturation.positiveMask();
-            weight = saturation.weight();
+        if (activeCount + Long.bitCount(remainingMask) <= bestCount) {
+            return;
+        }
 
-            StateKey key = new StateKey(positiveMask, negativeMask);
-            if (!visited.add(key)) {
-                return;
+        long iter = remainingMask;
+        while (iter != 0L) {
+            long bit = iter & -iter;
+            iter ^= bit;
+            int index = Long.numberOfTrailingZeros(bit);
+
+            if (!canEquip(index)) {
+                continue;
             }
 
-            int count = Long.bitCount(positiveMask) + Long.bitCount(negativeMask);
-            if (count > best.count() || (count == best.count() && weight > best.weight())) {
-                best = new BestResult(positiveMask, negativeMask, count, weight);
-            }
-
-            for (int i = 0; i < negative.size(); i++) {
-                long bit = 1L << i;
-                if ((negativeMask & bit) != 0L) {
+            long nextMask = activeMask | bit;
+            if (useVisited) {
+                int visitedIndex = (int) nextMask;
+                int word = visitedIndex >>> 6;
+                long wordBit = 1L << (visitedIndex & 63);
+                if ((visited[word] & wordBit) != 0L) {
                     continue;
                 }
-
-                IEquipment item = negative.get(i);
-                if (!canEquip(item, totals)) {
-                    continue;
-                }
-
-                int[] nextTotals = totals.clone();
-                modify(nextTotals, item.bonuses(), true);
-                dfs(positiveMask, negativeMask | bit, nextTotals, weight + negativeWeights[i]);
+                visited[word] |= wordBit;
             }
-        }
 
-        private Saturation saturatePositive(long positiveMask, int[] totals, int weight) {
-            while (true) {
-                boolean changed = false;
-                for (int i = 0; i < positive.size(); i++) {
-                    long bit = 1L << i;
-                    if ((positiveMask & bit) != 0L) {
-                        continue;
-                    }
-
-                    IEquipment item = positive.get(i);
-                    if (!canEquip(item, totals)) {
-                        continue;
-                    }
-
-                    positiveMask |= bit;
-                    modify(totals, item.bonuses(), true);
-                    weight += positiveWeights[i];
-                    changed = true;
-                }
-
-                if (!changed) {
-                    return new Saturation(positiveMask, weight);
-                }
+            applyBonus(index, 1);
+            boolean cascadeOk = !hasNegativeBonus[index] || cascadeValid(activeMask);
+            if (cascadeOk) {
+                search(nextMask, remainingMask & ~bit, activeCount + 1, activeWeight + weights[index]);
             }
-        }
-
-        private boolean canEquip(IEquipment item, int[] totals) {
-            int[] requirements = item.requirements();
-            for (int i = 0; i < requirements.length; i++) {
-                if (requirements[i] > 0 && totals[i] < requirements[i]) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private void modify(int[] totals, int[] skillPoints, boolean sum) {
-            for (int i = 0; i < skillPoints.length; i++) {
-                totals[i] += sum ? skillPoints[i] : -skillPoints[i];
-            }
-        }
-
-        private int weight(int[] skillPoints) {
-            int total = 0;
-            for (int i = 0; i < skillPoints.length; i++) {
-                total += skillPoints[i];
-            }
-            return total;
+            applyBonus(index, -1);
         }
     }
 
-    private record Saturation(long positiveMask, int weight) {
-    }
-
-    private record StateKey(long positiveMask, long negativeMask) {
-    }
-
-    private record BestResult(long positiveMask, long negativeMask, int count, int weight) {
-
-        private static BestResult empty() {
-            return new BestResult(0L, 0L, 0, Integer.MIN_VALUE);
-        }
-
-        private Result asResult(List<IEquipment> positive, List<IEquipment> negative) {
-            List<IEquipment> valid = new ArrayList<>();
-            List<IEquipment> invalid = new ArrayList<>();
-
-            for (int i = 0; i < positive.size(); i++) {
-                if ((positiveMask & (1L << i)) != 0L) {
-                    valid.add(positive.get(i));
-                } else {
-                    invalid.add(positive.get(i));
-                }
+    private boolean cascadeValid(long activeMask) {
+        long iter = activeMask;
+        while (iter != 0L) {
+            long bit = iter & -iter;
+            iter ^= bit;
+            int index = Long.numberOfTrailingZeros(bit);
+            if (!hasRequirements[index]) {
+                continue;
             }
 
-            for (int i = 0; i < negative.size(); i++) {
-                if ((negativeMask & (1L << i)) != 0L) {
-                    valid.add(negative.get(i));
-                } else {
-                    invalid.add(negative.get(i));
-                }
+            if (!isValid(index)) {
+                return false;
             }
-
-            return new Result(valid, invalid);
         }
+        return true;
+    }
+
+    private boolean canEquip(int index) {
+        int[] requirement = requirements[index];
+        if (requirement[0] > 0 && state[0] < requirement[0]) return false;
+        if (requirement[1] > 0 && state[1] < requirement[1]) return false;
+        if (requirement[2] > 0 && state[2] < requirement[2]) return false;
+        if (requirement[3] > 0 && state[3] < requirement[3]) return false;
+        if (requirement[4] > 0 && state[4] < requirement[4]) return false;
+        return true;
+    }
+
+    private boolean isValid(int index) {
+        int[] requirement = requirements[index];
+        int[] bonus = bonuses[index];
+        if (requirement[0] > 0 && state[0] < requirement[0] + bonus[0]) return false;
+        if (requirement[1] > 0 && state[1] < requirement[1] + bonus[1]) return false;
+        if (requirement[2] > 0 && state[2] < requirement[2] + bonus[2]) return false;
+        if (requirement[3] > 0 && state[3] < requirement[3] + bonus[3]) return false;
+        if (requirement[4] > 0 && state[4] < requirement[4] + bonus[4]) return false;
+        return true;
+    }
+
+    private void applyBonus(int index, int sign) {
+        int[] bonus = bonuses[index];
+        state[0] += sign * bonus[0];
+        state[1] += sign * bonus[1];
+        state[2] += sign * bonus[2];
+        state[3] += sign * bonus[3];
+        state[4] += sign * bonus[4];
     }
 }
