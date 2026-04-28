@@ -4,6 +4,7 @@ package com.wynncraft;
 import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
+import com.wynncraft.algorithms.SubtractiveBnBV2Algorithm;
 import com.wynncraft.algorithms.PrunedMaskAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
 import com.wynncraft.algorithms.StarvingGoblinAlgorithm;
@@ -33,6 +34,7 @@ public class AlgorithmRegistry {
         register(new NegativeOrderAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
+        register(new SubtractiveBnBV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
     }
 
