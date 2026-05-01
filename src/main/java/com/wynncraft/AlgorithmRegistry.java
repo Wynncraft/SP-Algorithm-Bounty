@@ -18,6 +18,8 @@ import com.wynncraft.algorithms.MySixthAlgorithm;
 import com.wynncraft.algorithms.MySixthPlayer;
 import com.wynncraft.algorithms.MyFirstPotentiallyIllegalAlgorithm;
 import com.wynncraft.algorithms.MyFirstPotentiallyIllegalPlayer;
+import com.wynncraft.algorithms.MySecondPotentiallyIllegalAlgorithm;
+import com.wynncraft.algorithms.MySecondPotentiallyIllegalPlayer;
 import com.wynncraft.algorithms.TheFourthAlgorithm;
 import com.wynncraft.algorithms.TheThirdAlgorithm;
 import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
@@ -65,6 +67,7 @@ public class AlgorithmRegistry {
         register(new MyFifthAlgorithm(), MyFifthPlayer.Builder::new);
         register(new MySixthAlgorithm(), MySixthPlayer.Builder::new);
         register(new MyFirstPotentiallyIllegalAlgorithm(), MyFirstPotentiallyIllegalPlayer.Builder::new);
+        register(new MySecondPotentiallyIllegalAlgorithm(), MySecondPotentiallyIllegalPlayer.Builder::new);
     }
 
     /**
