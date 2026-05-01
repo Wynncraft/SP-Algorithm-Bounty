@@ -16,6 +16,8 @@ import com.wynncraft.algorithms.MyFifthAlgorithm;
 import com.wynncraft.algorithms.MyFifthPlayer;
 import com.wynncraft.algorithms.MySixthAlgorithm;
 import com.wynncraft.algorithms.MySixthPlayer;
+import com.wynncraft.algorithms.MyFirstPotentiallyIllegalAlgorithm;
+import com.wynncraft.algorithms.MyFirstPotentiallyIllegalPlayer;
 import com.wynncraft.algorithms.TheFourthAlgorithm;
 import com.wynncraft.algorithms.TheThirdAlgorithm;
 import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
@@ -62,6 +64,7 @@ public class AlgorithmRegistry {
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
         register(new MyFifthAlgorithm(), MyFifthPlayer.Builder::new);
         register(new MySixthAlgorithm(), MySixthPlayer.Builder::new);
+        register(new MyFirstPotentiallyIllegalAlgorithm(), MyFirstPotentiallyIllegalPlayer.Builder::new);
     }
 
     /**
