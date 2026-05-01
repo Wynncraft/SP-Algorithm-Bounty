@@ -7,6 +7,8 @@ import com.wynncraft.algorithms.CascadeBoundChecker;
 import com.wynncraft.algorithms.GreedyAlgorithm;
 import com.wynncraft.algorithms.HelixAlgorithm;
 import com.wynncraft.algorithms.HelixPlayer;
+import com.wynncraft.algorithms.HelixRulesLawyerAlgorithm;
+import com.wynncraft.algorithms.HelixRulesLawyerPlayer;
 import com.wynncraft.algorithms.MyFirstAlgorithm;
 import com.wynncraft.algorithms.MySecondAlgorithm;
 import com.wynncraft.algorithms.OurSecondAlgorithm;
@@ -59,6 +61,7 @@ public class AlgorithmRegistry {
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
         register(new HelixAlgorithm(), HelixPlayer.Builder::new);
+        register(new HelixRulesLawyerAlgorithm(), HelixRulesLawyerPlayer.Builder::new);
     }
 
     /**
