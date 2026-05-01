@@ -770,6 +770,71 @@ class SyntheticCombinationTests {
         );
     }
 
+    @CombinationTest
+    public void case23_nineCandidatesForcesBfsFallback(IAlgorithm algorithm, IPlayerBuilder builder) {
+        SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item2 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item3 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item4 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item5 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item6 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item7 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item8 = SyntheticEquipment.of(new int[] { 10, 0, 0, 0, 0 }, new int[] { 0, 1, 0, 0, 0 });
+        SyntheticEquipment item9 = SyntheticEquipment.of(new int[] { 1000, 0, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
+        {
+            builder.allocate(SkillPoint.STRENGTH, 10);
+            builder.equipment(
+                item1, item2, item3, item4, item5, item6, item7, item8, item9
+            );
+        }
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertValid(result,
+            item1, item2, item3, item4, item5, item6, item7, item8
+        );
+        assertInvalid(result, item9);
+    }
+
+    @CombinationTest
+    public void case24_orderInvariantHigherWeightPair(IAlgorithm algorithm, IPlayerBuilder builder) {
+        SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { 20, 0, 0, 0, 0 }, new int[] { -10, 0, 0, 0, 0 });
+        SyntheticEquipment item2 = SyntheticEquipment.of(new int[] { 20, 0, 0, 0, 0 }, new int[] { 0, 10, 0, 0, 0 });
+        SyntheticEquipment item3 = SyntheticEquipment.of(new int[] { 30, 0, 0, 0, 0 }, new int[] { 0, 5, 0, 0, 0 });
+        {
+            builder.allocate(SkillPoint.STRENGTH, 30);
+            builder.equipment(
+                item1, item2, item3
+            );
+        }
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+        assertValid(result, item2, item3);
+        assertInvalid(result, item1);
+    }
+
+    @CombinationTest
+    public void case25_freeItemEnablesRejectedCandidate(IAlgorithm algorithm, IPlayerBuilder builder) {
+        SyntheticEquipment candidate = SyntheticEquipment.of(
+            new int[] { 100, 0, 0, 0, 0 }, new int[] { 5, 0, 0, 0, 0 });
+        SyntheticEquipment freeBase = SyntheticEquipment.of(
+            new int[] { 0, 0, 0, 0, 0 }, new int[] { 5, 0, 0, 0, 0 });
+        SyntheticEquipment freeTail = SyntheticEquipment.of(
+            new int[] { 0, 0, 0, 0, 0 }, new int[] { 5, 0, 0, 0, 0 });
+
+        builder.allocate(SkillPoint.STRENGTH, 90);
+        builder.equipment(candidate, freeBase);
+        IPlayer first = builder.build();
+        IAlgorithm.Result r1 = algorithm.run(first);
+        assertValid(r1, freeBase);
+        assertInvalid(r1, candidate);
+
+        builder.equipment(freeTail);
+        IPlayer second = builder.build();
+        IAlgorithm.Result r2 = algorithm.run(second);
+        assertValid(r2, candidate, freeBase, freeTail);
+        assertInvalid(r2);
+    }
+
     /**
      * Passes if {@code result} matches any one of the {@code acceptable}
      * boolean masks (unordered). Each mask, paired with {@code items}, defines
