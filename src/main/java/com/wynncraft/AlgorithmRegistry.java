@@ -1,26 +1,7 @@
 package com.wynncraft;
 
 
-import com.wynncraft.algorithms.NegativeOrderAlgorithm;
-import com.wynncraft.algorithms.CapyTopoAlgorithm;
-import com.wynncraft.algorithms.CascadeBoundChecker;
-import com.wynncraft.algorithms.GreedyAlgorithm;
-import com.wynncraft.algorithms.MyFirstAlgorithm;
-import com.wynncraft.algorithms.MySecondAlgorithm;
-import com.wynncraft.algorithms.OurSecondAlgorithm;
-import com.wynncraft.algorithms.PrunedMaskAlgorithm;
-import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
-import com.wynncraft.algorithms.SCCGraphAlgorithm;
-import com.wynncraft.algorithms.TheCuteCatAlgo;
-import com.wynncraft.algorithms.TheFourthAlgorithm;
-import com.wynncraft.algorithms.TheThirdAlgorithm;
-import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
-import com.wynncraft.algorithms.PrunedMaskAlgorithm;
-import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
-import com.wynncraft.algorithms.StarvingGoblinAlgorithm;
-import com.wynncraft.algorithms.StarvingPlayer;
-import com.wynncraft.algorithms.WynnFrumaAlgorithm;
-import com.wynncraft.algorithms.WynnSolverAlgorithm;
+import com.wynncraft.algorithms.*;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
@@ -56,6 +37,7 @@ public class AlgorithmRegistry {
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
+        register(new CuriousAlgorithm(), CuriousPlayer.Builder::new);
     }
 
     /**
