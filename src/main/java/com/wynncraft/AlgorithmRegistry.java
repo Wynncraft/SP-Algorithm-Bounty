@@ -14,6 +14,8 @@ import com.wynncraft.algorithms.SCCGraphAlgorithm;
 import com.wynncraft.algorithms.TheCuteCatAlgo;
 import com.wynncraft.algorithms.MyFifthAlgorithm;
 import com.wynncraft.algorithms.MyFifthPlayer;
+import com.wynncraft.algorithms.MySixthAlgorithm;
+import com.wynncraft.algorithms.MySixthPlayer;
 import com.wynncraft.algorithms.TheFourthAlgorithm;
 import com.wynncraft.algorithms.TheThirdAlgorithm;
 import com.wynncraft.algorithms.SubtractiveBnBAlgorithm;
@@ -59,6 +61,7 @@ public class AlgorithmRegistry {
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
         register(new MyFifthAlgorithm(), MyFifthPlayer.Builder::new);
+        register(new MySixthAlgorithm(), MySixthPlayer.Builder::new);
     }
 
     /**
