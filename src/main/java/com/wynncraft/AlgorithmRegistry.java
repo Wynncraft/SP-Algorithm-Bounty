@@ -1,6 +1,5 @@
 package com.wynncraft;
 
-
 import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.CascadeBoundChecker;
@@ -21,6 +20,9 @@ import com.wynncraft.algorithms.StarvingGoblinAlgorithm;
 import com.wynncraft.algorithms.StarvingPlayer;
 import com.wynncraft.algorithms.WynnFrumaAlgorithm;
 import com.wynncraft.algorithms.WynnSolverAlgorithm;
+import com.wynncraft.algorithms.WynnSolverV2Algorithm;
+import com.wynncraft.algorithms.WynnSolverV3Algorithm;
+import com.wynncraft.algorithms.WynnSolverV4Algorithm;
 import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
@@ -37,12 +39,15 @@ public class AlgorithmRegistry {
         // Register here your algorithm here and your custom player if necessary!
         // Make sure your algorithm contains the @Information annotation
         // New additions always goes on the bottom for reference
-        //register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
-        //register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
+        // register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
+        // register(new CapyTopoAlgorithm(), WynnPlayer.Builder::new);
         register(new SubtractiveBnBAlgorithm(), WynnPlayer.Builder::new);
         register(new WynnFrumaAlgorithm(), WynnPlayer.Builder::new);
         register(new SCCGraphAlgorithm(), WynnPlayer.Builder::new);
         register(new WynnSolverAlgorithm(), WynnPlayer.Builder::new);
+        register(new WynnSolverV2Algorithm(), WynnPlayer.Builder::new);
+        register(new WynnSolverV3Algorithm(), WynnPlayer.Builder::new);
+        register(new WynnSolverV4Algorithm(), WynnPlayer.Builder::new);
         register(new CascadeBoundChecker(), WynnPlayer.Builder::new);
         register(new MyFirstAlgorithm(), WynnPlayer.Builder::new);
         register(new MySecondAlgorithm(), WynnPlayer.Builder::new);
@@ -56,6 +61,8 @@ public class AlgorithmRegistry {
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
+        register(new com.wynncraft.algorithms.WynnSolverV35Algorithm(), com.wynncraft.algorithms.WynnSolverPlayer.Builder::new);
+        register(new com.wynncraft.algorithms.WynnSolverV45Algorithm(), com.wynncraft.algorithms.WynnSolverPlayer.Builder::new);
     }
 
     /**
@@ -64,13 +71,14 @@ public class AlgorithmRegistry {
      * Make sure your algorithm class has the {@link Information} annotation
      * otherwise it won't be registered
      *
-     * @param algorithm the algorithm instance
+     * @param algorithm     the algorithm instance
      * @param playerBuilder the player builder to use
      */
     protected static void register(IAlgorithm algorithm, Supplier<IPlayerBuilder> playerBuilder) {
         Information information = algorithm.getClass().getAnnotation(Information.class);
         if (information == null) {
-            throw new IllegalArgumentException("Algorithm class " + algorithm.getClass().getName() + " must have @Information annotation");
+            throw new IllegalArgumentException(
+                    "Algorithm class " + algorithm.getClass().getName() + " must have @Information annotation");
         }
 
         registry.add(new Entry(information, algorithm, playerBuilder));
@@ -87,8 +95,8 @@ public class AlgorithmRegistry {
      * Represents a registered algorithm that
      * we will run tests for
      *
-     * @param information the algorithm information
-     * @param algorithm the algorithm instance itself
+     * @param information   the algorithm information
+     * @param algorithm     the algorithm instance itself
      * @param playerBuilder the player builder supplier
      */
     public record Entry(Information information, IAlgorithm algorithm, Supplier<IPlayerBuilder> playerBuilder) {

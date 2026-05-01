@@ -88,14 +88,12 @@ JMH lives in `src/jmh/java/com/wynncraft/`:
 - `benchmarks/BenchOps` — shared helpers (equip permutations, SP increments, sequence runners).
 - `benchmarks/FullEquipBenchmark` — single full-build `run()` per invocation.
 - `benchmarks/OneByOneBenchmark` — single-item incremental equip.
-- `benchmarks/ServerSimBenchmark` — primary mixed workload: 10 equip sequences (8 perms each) + 10 SP-change sequences + 4000 weapon swaps, drawn from the 9 full-build synthetic cases via seeded RNG. The most representative perf benchmark; raise per-measurement time for serious evaluation so the JIT can settle.
 
 ```bash
 ./gradlew jmh                                                  # all benchmarks, all algorithms
-./gradlew jmh -Pbm=ServerSimBenchmark                          # one benchmark class (regex match)
 ./gradlew jmh -Palgo='WynnSolver V1'                           # one algorithm
 ./gradlew jmh -Palgo='WynnSolver V1,Pruned Mask V2'            # multiple algorithms
-./gradlew jmh -Pbm=ServerSimBenchmark -Palgo='WynnSolver V1'   # combine
+./gradlew jmh -Pbm=FullEquipBenchmark -Palgo='WynnSolver V1'   # combine
 ./gradlew jmh -PjmhArgs="-i 1 -wi 1 -f 1"                      # raw JMH CLI passthrough
 ```
 
