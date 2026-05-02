@@ -51,4 +51,35 @@ class CraftedItemEdgeCases {
             item5
         );
     }
+
+    // items cyclically enable each other but not 1-1
+    // Together there is enough sp, but item4 prevents item2 from being equiped
+    // Item1 fixes the sp problem but it requires item4 indirectly.
+    @CombinationTest
+    public void largeItemCycle(IAlgorithm algorithm, IPlayerBuilder builder) {
+        SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { 5, 0, 0, 0, 0 }, new int[] { 0, 5, 0, 0, 0 });
+        SyntheticEquipment item2 = SyntheticEquipment.of(new int[] { 0, 5, 0, 0, 0 }, new int[] { 0, 0, 5, 0, 0 });
+        SyntheticEquipment item3 = SyntheticEquipment.of(new int[] { 0, 0, 5, 0, 0 }, new int[] { 0, 0, 0, 5, 0 });
+        SyntheticEquipment item4 = SyntheticEquipment.of(new int[] { 0, 0, 0, 5, 0 }, new int[] { 0, -1, 0, 0, 5 });
+        SyntheticEquipment item5 = SyntheticEquipment.of(new int[] { 0, 0, 0, 0, 5 }, new int[] { 5, 0, 0, 0, 0 });
+
+            builder.allocate(SkillPoint.STRENGTH, 0);
+            builder.allocate(SkillPoint.DEXTERITY, 5);
+            builder.allocate(SkillPoint.INTELLIGENCE, 0);
+            builder.allocate(SkillPoint.DEFENCE, 0);
+            builder.allocate(SkillPoint.AGILITY, 0);
+            
+            builder.equipment(
+                item1,
+                item2,
+                item3,
+                item4,
+                item5
+            );
+        IPlayer player = builder.build();
+        IAlgorithm.Result result = algorithm.run(player);
+
+        assertValid(result, item2, item3);
+        assertInvalid(result, item1, item4, item5);
+    }
 }
