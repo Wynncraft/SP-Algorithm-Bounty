@@ -24,7 +24,7 @@ class CraftedItemEdgeCases {
         SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { -100, 0, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
         SyntheticEquipment item2 = SyntheticEquipment.of(new int[] { 0, 5, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
         SyntheticEquipment item3 = SyntheticEquipment.of(new int[] { 0, 0, 5, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
-        SyntheticEquipment item4 = SyntheticEquipment.of(new int[] { 0, 0, 0, 5, 0 }, new int[] { 0, 0, 0, 0, 0 });
+        SyntheticEquipment item4 = SyntheticEquipment.of(new int[] { 0, 0, 0, 5, 0 }, new int[] { -150, 0, 0, 0, 0 });
         SyntheticEquipment item5 = SyntheticEquipment.of(new int[] { 0, 0, 0, 0, 5 }, new int[] { -150, 0, 0, 0, 0 });
 
             builder.allocate(SkillPoint.STRENGTH, 10);
