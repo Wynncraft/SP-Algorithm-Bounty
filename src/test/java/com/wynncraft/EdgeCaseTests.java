@@ -15,13 +15,12 @@ import static com.wynncraft.core.EquipmentAssertions.*;
 import static org.assertj.core.api.Assertions.fail;
 
 @Tag("curated")
-class CraftedItemEdgeCases {
+class EdgeCaseTests {
 
-    // crafted items can have negative skill point requirements. 
-    // I have seen a negative req fail with -intel reqs on wash builds.
+    // item1 has the lowest sp reqs but is the item to exclude.
     @CombinationTest
-    public void crafted_negative_reqs(IAlgorithm algorithm, IPlayerBuilder builder) {
-        SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { -100, 0, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
+    public void negative_bonus(IAlgorithm algorithm, IPlayerBuilder builder) {
+        SyntheticEquipment item1 = SyntheticEquipment.of(new int[] { 1, 0, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
         SyntheticEquipment item2 = SyntheticEquipment.of(new int[] { 0, 5, 0, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
         SyntheticEquipment item3 = SyntheticEquipment.of(new int[] { 0, 0, 5, 0, 0 }, new int[] { 0, 0, 0, 0, 0 });
         SyntheticEquipment item4 = SyntheticEquipment.of(new int[] { 0, 0, 0, 5, 0 }, new int[] { -150, 0, 0, 0, 0 });
@@ -32,8 +31,6 @@ class CraftedItemEdgeCases {
             builder.allocate(SkillPoint.INTELLIGENCE, 10);
             builder.allocate(SkillPoint.DEFENCE, 10);
             builder.allocate(SkillPoint.AGILITY, 10);
-            // all algorithms find correct solution when item1 is excluded
-            // all algorithms except SCC Graph fail when item1 is included
             builder.equipment(
                 item1,
                 item2,
