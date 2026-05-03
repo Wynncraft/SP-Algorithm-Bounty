@@ -4,6 +4,7 @@ import com.wynncraft.core.WynnPlayer;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IEquipment;
 import com.wynncraft.core.interfaces.Information;
+import com.wynncraft.enums.Equipment;
 import com.wynncraft.enums.SkillPoint;
 
 import java.util.ArrayList;
@@ -26,8 +27,36 @@ public class AStar implements IAlgorithm<WynnPlayer> {
     private static final SkillPoint[] SKILL_POINTS = SkillPoint.values();
 
     // admissable or consistent heuristic for A*
-    public long scoreHeuristic(Node node) {
-        return 0;
+    public void scoreHeuristic(Node node) {
+        node.f_scores = node.g_scores;
+
+        // int[] heuristicAssign = node.assigned_sp.clone();
+        // int[] heuristicReqs = node.reqs.clone();
+        // int[] heuristicBonus = node.bonus_sp.clone();
+
+        // // assume all bonuses apply and get minimum reqs for everything
+        // for (int i = 0; i < node.value.length; i++) {
+        //     if (node.value[i]) continue;
+        //     updateReqs(heuristicReqs, equipment[i].requirements());
+        //     updateBonusIgnoreNeg(heuristicBonus, equipment[i].bonuses());
+        // }
+
+        // for (int i = 0; i < 5; i++) {
+        //     if (heuristicReqs[i] > 0 && 
+        //         heuristicReqs[i] > heuristicAssign[i] + heuristicBonus[i]) {
+        //         heuristicAssign[i] = heuristicReqs[i] - heuristicBonus[i];
+        //     }
+        // }
+
+        // long[] diff = new long[5];
+        // for (int i = 0; i < 5; i++) {
+        //     diff[i] = heuristicAssign[i] - maxSp[i]; // negative with 0 being exact
+        //     if (diff[i] > 0) {
+        //         node.f_scores = 1;
+        //         return;
+        //     }
+        // }
+        // node.f_scores = scoreDiff(diff);
     }
 
 
@@ -167,8 +196,7 @@ public class AStar implements IAlgorithm<WynnPlayer> {
 
                 long nextG = scoreAddition(nextReqs, nextAssigned, nextBonus, equipment[i], value);
                 Node next = new Node(newVal, nextG, nextReqs, nextAssigned, nextBonus, itemCount + 1);
-                next.h_scores = scoreHeuristic(next);
-                next.f_scores = next.h_scores + next.g_scores;
+                scoreHeuristic(next);
                 nodes.add(next);
 
             }
@@ -299,6 +327,16 @@ public class AStar implements IAlgorithm<WynnPlayer> {
     private static void updateBonus(int[] bonus, int[] newBonus) {
         for (int i = 0; i < 5; i++) {
             bonus[i] += newBonus[i];
+        }
+    }
+
+    private static void updateBonusIgnoreNeg(int[] bonus, int[] newBonus) {
+        for (int i = 0; i < 5; i++) {
+            if (newBonus[i] > 0) 
+                bonus[i] += newBonus[i];
+            
+            if (bonus[i] < 0)
+                bonus[i] = 0;
         }
     }
 
