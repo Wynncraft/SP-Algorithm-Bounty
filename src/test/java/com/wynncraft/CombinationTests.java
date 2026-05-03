@@ -184,12 +184,12 @@ class CombinationTests {
         }
         IPlayer player = builder.build();
         IAlgorithm.Result result = algorithm.run(player);
-        assertSkillPoints(player, 75, 42, 55, 52, -3);
         assertValid(result,
             Equipment.GRANITIC_METTLE,
             Equipment.RATION,
             Equipment.REPURPOSED_VESSELS
         );
+        assertSkillPoints(player, 75, 42, 55, 52, -3);
         assertInvalid(result);
     }
 
@@ -254,7 +254,6 @@ class CombinationTests {
         }
         IPlayer player = builder.build();
         IAlgorithm.Result result = algorithm.run(player);
-        assertSkillPoints(player, 67, 68, -35, 68, 60);
         assertValid(result,
             Equipment.DARKSTEEL_FULL_HELM,
             Equipment.DARKSTEEL_CENTRIFUGE,
@@ -263,6 +262,7 @@ class CombinationTests {
             Equipment.BINDING_BRACE,
             Equipment.DAREDEVIL
         );
+        assertSkillPoints(player, 67, 68, -35, 68, 60);
         assertInvalid(result);
     }
 
