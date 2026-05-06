@@ -1,4 +1,4 @@
-package com.wynncraft.combination;
+package com.wynncraft.core;
 
 import com.wynncraft.AlgorithmRegistry;
 import com.wynncraft.core.interfaces.IAlgorithm;

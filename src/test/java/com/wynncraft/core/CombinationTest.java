@@ -1,4 +1,4 @@
-package com.wynncraft.combination;
+package com.wynncraft.core;
 
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;

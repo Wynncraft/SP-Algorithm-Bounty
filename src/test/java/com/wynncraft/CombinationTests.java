@@ -1,18 +1,16 @@
 package com.wynncraft;
 
 import com.wynncraft.core.interfaces.IAlgorithm;
-import com.wynncraft.core.interfaces.IEquipment;
 import com.wynncraft.core.interfaces.IPlayer;
 import com.wynncraft.core.interfaces.IPlayerBuilder;
-import com.wynncraft.combination.CombinationTest;
+import com.wynncraft.core.CombinationTest;
 import com.wynncraft.enums.Equipment;
-import com.wynncraft.enums.EquipmentType;
 import com.wynncraft.enums.SkillPoint;
+import org.junit.jupiter.api.Tag;
 
-import java.util.Arrays;
+import static com.wynncraft.core.EquipmentAssertions.*;
 
-import static org.assertj.core.api.Assertions.*;
-
+@Tag("upstream")
 class CombinationTests {
 
     @CombinationTest
@@ -316,56 +314,6 @@ class CombinationTests {
         assertSkillPoints(player, 60, 0, 0, 0, 0);
         assertValid(result, Equipment.ACIDOSIS);
         assertInvalid(result, Equipment.ACHROMATIC_GLOOM);
-    }
-
-    /**
-     * Asserts all the provided equipment are inside the expected list
-     *
-     * @param result the result to test for
-     * @param expected the expected valid equipment
-     */
-    private static void assertValid(IAlgorithm.Result result, IEquipment... expected) {
-        assertThat(expected)
-            .containsExactlyInAnyOrderElementsOf(result.valid());
-    }
-
-    /**
-     * Asserts all provided equipment are inside the expected list
-     *
-     * @param result the result to test for
-     * @param expected the expected invalid equipment
-     */
-    private static void assertInvalid(IAlgorithm.Result result, IEquipment... expected) {
-        assertThat(expected)
-            .containsExactlyInAnyOrderElementsOf(result.invalid());
-    }
-
-    /**
-     * Asserts the final skill point count for the player
-     *
-     * @param player the player to assert for
-     * @param strength the strength value
-     * @param dexterity the dexterity value
-     * @param intelligence the intelligence value
-     * @param defence the defence value
-     * @param agility the agility value
-     */
-    private static void assertSkillPoints(IPlayer player, int strength, int dexterity, int intelligence, int defence, int agility) {
-        assertThat(player.total(SkillPoint.STRENGTH))
-            .describedAs("Strength")
-            .isEqualTo(strength);
-        assertThat(player.total(SkillPoint.DEXTERITY))
-            .describedAs("Dexterity")
-            .isEqualTo(dexterity);
-        assertThat(player.total(SkillPoint.INTELLIGENCE))
-            .describedAs("Intelligence")
-            .isEqualTo(intelligence);
-        assertThat(player.total(SkillPoint.DEFENCE))
-            .describedAs("Defence")
-            .isEqualTo(defence);
-        assertThat(player.total(SkillPoint.AGILITY))
-            .describedAs("Agility")
-            .isEqualTo(agility);
     }
 
 }

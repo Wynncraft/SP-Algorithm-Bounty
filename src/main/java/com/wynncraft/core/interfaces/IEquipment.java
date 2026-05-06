@@ -40,4 +40,19 @@ public interface IEquipment {
      */
     boolean canEquip(IPlayer player);
 
+    /**
+     * Verifies if the provided array of skills contains
+     * a negative value
+     *
+     * @param skills the skills to verify
+     * @return if it contains a negative values
+     */
+    default boolean checkNegativeBonus(int[] skills) {
+        for (int skill : skills) {
+            if (skill < 0) return true;
+        }
+
+        return false;
+    }
+
 }

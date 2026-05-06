@@ -5659,21 +5659,6 @@ public final class Equipment implements IEquipment {
         return true;
     }
 
-    /**
-     * Verifies if the provided array of skills contains
-     * a negative value
-     *
-     * @param skills the skills to verify
-     * @return if it contains a negative values
-     */
-    private boolean checkNegativeBonus(int[] skills) {
-        for (int skill : skills) {
-            if (skill < 0) return true;
-        }
-
-        return false;
-    }
-
     @Override
     public String toString() {
         return String.format("%s (req: %s) (bonus: %s)", displayName, Arrays.toString(requirements), Arrays.toString(bonuses));

@@ -18,6 +18,13 @@ public interface IAlgorithm<T extends IPlayer> {
     Result run(T player);
 
     /**
+     * Clears any cross-call caches the algorithm maintains so the next
+     * {@link #run(IPlayer)} starts cold. No-op by default; overridden by
+     * algorithms that memoize state across invocations (e.g. mask caches).
+     */
+    default void clearCache() { }
+
+    /**
      * Holds the final combinatory result of the algorithm
      *
      * @param valid the equipment that should be marked as valid

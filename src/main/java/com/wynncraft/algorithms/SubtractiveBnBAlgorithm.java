@@ -94,6 +94,12 @@ public final class SubtractiveBnBAlgorithm implements IAlgorithm<WynnPlayer> {
     private int cachedTotalWeight = 0;
 
     @Override
+    public void clearCache() {
+        cachedN = 0;
+        cachedTotalWeight = 0;
+    }
+
+    @Override
     public Result run(WynnPlayer player) {
         List<IEquipment> equipment = player.equipment();
         int eqSize = equipment.size();

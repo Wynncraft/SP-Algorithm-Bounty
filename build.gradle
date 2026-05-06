@@ -43,10 +43,25 @@ dependencies {
 }
 
 test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // -Pcases=upstream / -Pcases=curated,generated → JUnit @Tag filter
+        if (project.hasProperty('cases')) {
+            includeTags(*project.property('cases').toString().split(',')*.trim())
+        }
+    }
 
+    // -Dalgorithm=Foo (upstream) and -Palgo=Foo (alias) both reach
+    // CombinationTestSupport.selectedAlgorithms() via the `algorithm` system property.
     if (project.hasProperty('algorithm')) {
         systemProperty 'algorithm', project.property('algorithm')
+    }
+    if (project.hasProperty('algo')) {
+        systemProperty 'algorithm', project.property('algo')
+    }
+
+    // Surface the per-algorithm PASS/FAIL summary printed by SummaryTable.close().
+    testLogging {
+        showStandardStreams = true
     }
 }
 
@@ -61,6 +76,16 @@ tasks.register('jmh', JavaExec) {
         resultFile.get().asFile.parentFile.mkdirs()
     }
     args '-v', 'SILENT', '-rf', 'json', '-rff', resultFile.get().asFile.absolutePath
+
+    // -Palgo='WynnSolver V1' or -Palgo='WynnSolver V1,Pruned Mask V2' → -p algorithm=...
+    if (project.hasProperty('algo')) {
+        args '-p', "algorithm=${project.property('algo')}"
+    }
+
+    // -Pbm=ServerSim → JMH treats it as an include regex, so partial class names work
+    if (project.hasProperty('bm')) {
+        args project.property('bm').toString()
+    }
 
     if (project.hasProperty('jmhArgs')) {
         args project.property('jmhArgs').toString().split('\\s+')

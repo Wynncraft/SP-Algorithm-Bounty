@@ -4,6 +4,7 @@ import com.wynncraft.AlgorithmRegistry;
 import com.wynncraft.JMHEntry;
 import com.wynncraft.core.interfaces.IAlgorithm;
 import com.wynncraft.core.interfaces.IPlayer;
+import com.wynncraft.instances.BuildFactory;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -37,23 +38,24 @@ public class FullEquipBenchmark {
     public void prepare() {
         // Find the correct algorithm, quite stupid but necessary since
         // JMH doesn't support proper parameters due to its structure
+        BuildFactory spec = JMHEntry.build(build);
         AlgorithmRegistry.Entry entry = AlgorithmRegistry.registry()
             .stream()
             .filter(e -> e.name().equals(algorithm))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Unknown algorithm benchmark parameter: " + algorithm));
 
-        // Setup the algorithm and player that should be used
+        // Retrieve the algorithm and prepare the player
+        // we will run against
         _algorithm = entry.algorithm();
-        _player = JMHEntry.build(build, entry);
+        _player = spec.create(entry);
     }
 
     @Benchmark
     public void full_equip(Blackhole blackhole) {
-        // We must reset the player allocated points before each
-        // each individual test otherwise we will skew the data
-        // this technically add some latency but it should even
-        // out in the results
+        // Cold cache per invocation: every algorithm starts each measurement
+        // from the same baseline, regardless of whether it caches across runs.
+        _algorithm.clearCache();
         _player.reset();
 
         // Then after resetting run the algorithm
