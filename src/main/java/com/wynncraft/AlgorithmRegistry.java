@@ -1,6 +1,8 @@
 package com.wynncraft;
 
 
+import com.wynncraft.algorithms.AxiomAlgorithm;
+import com.wynncraft.algorithms.AxiomPlayer;
 import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.CascadeBoundChecker;
@@ -56,6 +58,7 @@ public class AlgorithmRegistry {
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
+        register(new AxiomAlgorithm(), AxiomPlayer.Builder::new);
     }
 
     /**
