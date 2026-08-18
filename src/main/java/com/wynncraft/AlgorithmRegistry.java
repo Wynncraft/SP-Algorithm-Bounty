@@ -11,6 +11,7 @@ import com.wynncraft.algorithms.OurSecondAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskAlgorithm;
 import com.wynncraft.algorithms.PrunedMaskV2Algorithm;
 import com.wynncraft.algorithms.SCCGraphAlgorithm;
+import com.wynncraft.algorithms.SieveAlgorithm;
 import com.wynncraft.algorithms.TheCuteCatAlgo;
 import com.wynncraft.algorithms.TheFourthAlgorithm;
 import com.wynncraft.algorithms.TheThirdAlgorithm;
@@ -56,6 +57,7 @@ public class AlgorithmRegistry {
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
+        register(new SieveAlgorithm(), WynnPlayer.Builder::new);
     }
 
     /**
