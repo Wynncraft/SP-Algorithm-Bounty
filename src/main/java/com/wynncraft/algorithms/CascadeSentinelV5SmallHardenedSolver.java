@@ -9,16 +9,16 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Exact scalar solver for snapshots outside the common fast domain, including
- * inputs with more than nine candidates or more than 64 items.
+ * Exact scalar solver for snapshots that remain within 64 items and nine
+ * candidates but cannot use the packed common path because packed arithmetic is
+ * unsafe or the dense-nine guard is active.
  *
- * <p>Uses sound reachability reductions and admissible exact-search bounds, with
- * a self-contained exact fallback beyond the bounded mask search. It stores no
- * reusable solve result between calls.</p>
+ * <p>Uses sound reachability reductions and admissible exact-search bounds. It
+ * stores no reusable solve result between calls.</p>
  */
-final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<CascadeSentinelCachedV4Player> {
+final class CascadeSentinelV5SmallHardenedSolver implements IAlgorithm<CascadeSentinelV5Player> {
     private static final int NO_NEED = Integer.MIN_VALUE;
-    private static final int MAX_DIRECT_ITEMS = 28;
+    private static final int MAX_DIRECT_ITEMS = 25;
     private static final long MAX_SYMMETRY_REDUCED_STATES = 1_000_000L;
 
     private int[] originalIndex;
@@ -40,22 +40,19 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
     private int bestB0,bestB1,bestB2,bestB3,bestB4;
     private int alloc0,alloc1,alloc2,alloc3,alloc4;
     private boolean anyNegative;
-    private long[] fallbackTTKeys;
-    private int[] fallbackTTGen;
-    private int fallbackTTEpoch = 1;
 
     @Override
-    public Result run(CascadeSentinelCachedV4Player player) {
+    public Result run(CascadeSentinelV5Player player) {
         final List<IEquipment> equipment = player;
         itemCount = player.itemCount;
         if (itemCount > 64) return fallback(player);
-        CascadeSentinelCachedV4Player.Data d = player.data;
-        CascadeSentinelCachedV4Player.HardenedData h = d.hardened;
+        CascadeSentinelV5Player.Data d = player.data;
+        CascadeSentinelV5Player.HardenedData h = d.hardened;
         originalIndex=d.originalIndex; r0=h.r0;r1=h.r1;r2=h.r2;r3=h.r3;r4=h.r4;
         b0=h.b0;b1=h.b1;b2=h.b2;b3=h.b3;b4=h.b4;
         p0=h.p0;p1=h.p1;p2=h.p2;p3=h.p3;p4=h.p4; itemWeight=d.weight;
         alloc0=d.alloc0; alloc1=d.alloc1; alloc2=d.alloc2; alloc3=d.alloc3; alloc4=d.alloc4;
-        CascadeSentinelCachedV4Player.HardenedPlayer snapshot = (CascadeSentinelCachedV4Player.HardenedPlayer) player;
+        CascadeSentinelV5Player.HardenedPlayer snapshot = (CascadeSentinelV5Player.HardenedPlayer) player;
         baseCount=snapshot.freeCount(); baseScore=snapshot.freeScore();
         forcedOriginalMask=player.freeOriginalMask(); k=player.candidateCount(); anyNegative=player.anyNegative();
         int s0=alloc0+snapshot.free0, s1=alloc1+snapshot.free1, s2=alloc2+snapshot.free2, s3=alloc3+snapshot.free3, s4=alloc4+snapshot.free4;
@@ -103,7 +100,7 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
 
     }
 
-    private Result finish(CascadeSentinelCachedV4Player player, List<IEquipment> equipment) {
+    private Result finish(CascadeSentinelV5Player player, List<IEquipment> equipment) {
         player.setBonus(bestB0,bestB1,bestB2,bestB3,bestB4);
         return result(equipment);
     }
@@ -156,12 +153,12 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
         // compute which remaining items could possibly become equipable from
         // this exact state. Items outside this closure are impossible below
         // this node, so they cannot contribute to cardinality or tie score.
-        long candidates=allowedSearchMask & ~mask;
+        long candidates=optimisticRemainingMask(allowedSearchMask & ~mask,s0,s1,s2,s3,s4);
         int rem=Long.bitCount(candidates), max=Math.min(globalCardinalityUpper,count+rem);
         if(max<bestCount) return false;
         if(max==bestCount){
             int need=bestCount-count;
-            if(need<=0) return false;
+            if(need<=0 || score+topWeightSum(candidates,need)<=bestScore) return false;
         }
 
         for(int oi=0;oi<branchOrderCount;oi++){
@@ -264,7 +261,7 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
 
     /**
      * Above the direct-search ceiling, use the mask engine only when equivalence
-     * classes bound the number of canonical subset states below the configured
+     * classes bound the number of canonical subset states to at most the configured
      * cap. This admits large duplicate-heavy inputs without exposing arbitrary
      * high-cardinality inputs to an unrestricted 2^k state space.
      */
@@ -351,9 +348,11 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
         return new Result(new MaskList(equipment,bestOriginalMask,bestCount),new MaskList(equipment,all&~bestOriginalMask,itemCount-bestCount));
     }
 
-    private Result fallback(CascadeSentinelCachedV4Player player){
+    private Result fallback(CascadeSentinelV5Player player){
         // Exact fallback outside the bounded mask search. Keep it self-contained so
         // correctness, including tie-breaking, does not depend on another registered algorithm.
+        // This general fallback reads original item values, which must stay stable
+        // for the duration of the solve; the bounded paths use captured sidecars.
         final int n=player.itemCount;
         IEquipment[] items=Arrays.copyOf(player.data.items,n);
         int[] sp={player.data.alloc0,player.data.alloc1,player.data.alloc2,player.data.alloc3,player.data.alloc4};
@@ -367,58 +366,13 @@ final class CascadeSentinelCachedV4LargeHardenedSolver implements IAlgorithm<Cas
             else remaining++;
         }
         FallbackBest fb=new FallbackBest(n,count,score,active);
-        if(n<=64){
-            beginFallbackTT();
-            long mask=0L; for(int i=0;i<n;i++) if(active[i]) mask|=1L<<i;
-            recordFallbackState(mask);
-            fallbackSearchMasked(items,sp,active,count,score,remaining,fb,mask);
-        } else {
-            fallbackSearch(items,sp,active,count,score,remaining,fb);
-        }
+        fallbackSearch(items,sp,active,count,score,remaining,fb);
         player.reset();
         for(int i=0;i<n;i++)if(fb.best[i])player.modify(items[i].bonuses(),true);
         if(fb.count==n)return new Result(player,Collections.emptyList());
         List<IEquipment> valid=new java.util.ArrayList<>(fb.count), invalid=new java.util.ArrayList<>(n-fb.count);
         for(int i=0;i<n;i++)(fb.best[i]?valid:invalid).add(items[i]);
         return new Result(valid,invalid);
-    }
-
-    private void beginFallbackTT(){
-        final int size=1<<16;
-        if(fallbackTTKeys==null){fallbackTTKeys=new long[size];fallbackTTGen=new int[size];}
-        if(++fallbackTTEpoch==0){Arrays.fill(fallbackTTGen,0);fallbackTTEpoch=1;}
-    }
-    private boolean recordFallbackState(long key){
-        int slot=mix(key)&(fallbackTTKeys.length-1);
-        if(fallbackTTGen[slot]==fallbackTTEpoch && fallbackTTKeys[slot]==key)return false;
-        fallbackTTGen[slot]=fallbackTTEpoch; fallbackTTKeys[slot]=key; return true;
-    }
-    private void fallbackSearchMasked(IEquipment[] items,int[] sp,boolean[] active,
-                                      int count,int score,int remaining,FallbackBest best,long mask){
-        if(count>best.count||(count==best.count&&score>best.score)){
-            best.count=count;best.score=score;System.arraycopy(active,0,best.best,0,active.length);
-            if(count==items.length)return;
-        }
-        if(count+remaining<best.count)return;
-        for(int i=0;i<items.length;i++){
-            if(active[i])continue;
-            int[] req=items[i].requirements(); boolean meets=true;
-            for(int q=0;q<5;q++)if(req[q]>0&&sp[q]<req[q]){meets=false;break;}
-            if(!meets)continue;
-            int[] bonus=items[i].bonuses(); for(int q=0;q<5;q++)sp[q]+=bonus[q];
-            boolean sustainable=true;
-            for(int j=0;j<items.length&&sustainable;j++)if(active[j]){
-                int[] r=items[j].requirements(),b=items[j].bonuses();
-                for(int q=0;q<5;q++)if(r[q]>0&&sp[q]-b[q]<r[q]){sustainable=false;break;}
-            }
-            if(sustainable){
-                active[i]=true; int w=bonus[0]+bonus[1]+bonus[2]+bonus[3]+bonus[4]; long next=mask|(1L<<i);
-                if(recordFallbackState(next)) fallbackSearchMasked(items,sp,active,count+1,score+w,remaining-1,best,next);
-                active[i]=false;
-                if(best.count==items.length){for(int q=0;q<5;q++)sp[q]-=bonus[q];return;}
-            }
-            for(int q=0;q<5;q++)sp[q]-=bonus[q];
-        }
     }
 
     private static void fallbackSearch(IEquipment[] items,int[] sp,boolean[] active,

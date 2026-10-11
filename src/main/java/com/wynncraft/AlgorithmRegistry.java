@@ -4,10 +4,10 @@ package com.wynncraft;
 import com.wynncraft.algorithms.NegativeOrderAlgorithm;
 import com.wynncraft.algorithms.CapyTopoAlgorithm;
 import com.wynncraft.algorithms.CascadeBoundChecker;
-import com.wynncraft.algorithms.CascadeSentinelV4Algorithm;
-import com.wynncraft.algorithms.CascadeSentinelV4Player;
-import com.wynncraft.algorithms.CascadeSentinelCachedV4Algorithm;
-import com.wynncraft.algorithms.CascadeSentinelCachedV4Player;
+import com.wynncraft.algorithms.CascadeSentinelV5Algorithm;
+import com.wynncraft.algorithms.CascadeSentinelV5Player;
+import com.wynncraft.algorithms.CascadeSentinelCachedV5Algorithm;
+import com.wynncraft.algorithms.CascadeSentinelCachedV5Player;
 import com.wynncraft.algorithms.GreedyAlgorithm;
 import com.wynncraft.algorithms.MyFirstAlgorithm;
 import com.wynncraft.algorithms.MySecondAlgorithm;
@@ -60,8 +60,8 @@ public class AlgorithmRegistry {
         register(new PrunedMaskAlgorithm(), WynnPlayer.Builder::new);
         register(new PrunedMaskV2Algorithm(), WynnPlayer.Builder::new);
         register(new StarvingGoblinAlgorithm(), StarvingPlayer.Builder::new);
-        register(new CascadeSentinelV4Algorithm(), CascadeSentinelV4Player.Builder::new);
-        register(new CascadeSentinelCachedV4Algorithm(), CascadeSentinelCachedV4Player.Builder::new);
+        register(new CascadeSentinelV5Algorithm(), CascadeSentinelV5Player.Builder::new);
+        register(new CascadeSentinelCachedV5Algorithm(), CascadeSentinelCachedV5Player.Builder::new);
     }
 
     /**
